@@ -1,20 +1,20 @@
 #!/usr/bin/env bash
 set -euo pipefail
-
 if [ "${EUID:-$(id -u)}" -ne 0 ]; then echo "Запусти от root: sudo bash install.sh"; exit 1; fi
 BASE="https://raw.githubusercontent.com/rvkrin2-collab/chinese-study/main"
 APP_DIR="/opt/apps/chinese-study"; STATE_DIR="/var/lib/chinese-study"; ENV_FILE="/etc/chinese-study.env"; UPDATER="/usr/local/sbin/chinese-study-update"
-for c in curl base64 gzip sha256sum python3; do command -v "$c" >/dev/null 2>&1 || { apt-get update; apt-get install -y curl ca-certificates coreutils gzip python3; break; }; done
+need=0; for c in curl base64 gzip sha256sum python3 pdftoppm; do command -v "$c" >/dev/null 2>&1 || need=1; done
+if [ "$need" -eq 1 ]; then apt-get update; apt-get install -y curl ca-certificates coreutils gzip python3 poppler-utils; fi
 mkdir -p "$APP_DIR" "$STATE_DIR"
-
-if [ ! -f "$ENV_FILE" ]; then
-  KEY="${OPENAI_API_KEY:-}"
-  if [ -z "$KEY" ] && [ -r /dev/tty ]; then
-    echo "Для разбора фото/PDF нужен OpenAI API key (хранится только на VPS)."
-    read -r -s -p "OPENAI_API_KEY: " KEY </dev/tty || true; echo >/dev/tty
-  fi
-  if [ -n "$KEY" ]; then printf 'OPENAI_API_KEY=%s\nOPENAI_MODEL=gpt-5.6-luna\n' "$KEY" >"$ENV_FILE"; chmod 600 "$ENV_FILE"; else printf 'OPENAI_MODEL=gpt-5.6-luna\n' >"$ENV_FILE"; chmod 600 "$ENV_FILE"; fi
+KEY="${MINIMAX_API_KEY:-}"
+if [ -z "$KEY" ] && [ -f "$ENV_FILE" ]; then KEY="$(sed -n 's/^MINIMAX_API_KEY=//p' "$ENV_FILE" | head -1)"; fi
+if [ -z "$KEY" ] && [ -r /dev/tty ]; then
+  echo "Для разбора фото/PDF нужен MiniMax API key. Он будет храниться только на VPS." >/dev/tty
+  printf 'MINIMAX_API_KEY: ' >/dev/tty; IFS= read -r -s KEY </dev/tty || true; echo >/dev/tty
 fi
+if [ -f "$ENV_FILE" ]; then sed -i '/^OPENAI_/d;/^MINIMAX_/d' "$ENV_FILE"; else touch "$ENV_FILE"; fi
+if [ -n "$KEY" ]; then printf 'MINIMAX_API_KEY=%s\nMINIMAX_MODEL=MiniMax-M3\n' "$KEY" >>"$ENV_FILE"; else printf 'MINIMAX_MODEL=MiniMax-M3\n' >>"$ENV_FILE"; fi
+chmod 600 "$ENV_FILE"
 
 cat >"$UPDATER" <<'EOF'
 #!/usr/bin/env bash
@@ -30,9 +30,10 @@ if [ "$CURRENT" != "$VERSION" ] || [ ! -s "$APP_DIR/index.html" ]; then
   base64 -d "$TMP/payload.b64" | gzip -dc >"$TMP/index.html"; printf '%s  %s\n' "$SHA" "$TMP/index.html" | sha256sum -c - >/dev/null
   grep -qi '<!doctype html' "$TMP/index.html"; [ "$(wc -c <"$TMP/index.html")" -gt 10000 ]
   python3 - "$TMP/index.html" <<'PY'
-import sys
-p=sys.argv[1]; s=open(p,encoding='utf-8').read(); tag='<script src="ai-import.js?v=3.4"></script>'
-if tag not in s: s=s.replace('</body>',tag+'\n</body>')
+import sys,re
+p=sys.argv[1]; s=open(p,encoding='utf-8').read()
+s=re.sub(r'<script src="ai-import\.js\?v=[^"]+"></script>\s*','',s)
+s=s.replace('</body>','<script src="ai-import.js?v=3.5"></script>\n</body>')
 open(p,'w',encoding='utf-8').write(s)
 PY
   install -m 0644 "$TMP/index.html" "$APP_DIR/index.html.new"; mv -f "$APP_DIR/index.html.new" "$APP_DIR/index.html"; printf '%s\n' "$VERSION" >"$STATE_DIR/version"; changed=1
@@ -45,10 +46,9 @@ if [ "$changed" -eq 1 ] && systemctl is-enabled chinese-study.service >/dev/null
 echo "Chinese Study: версия $VERSION актуальна"
 EOF
 chmod 0755 "$UPDATER"
-
 cat >/etc/systemd/system/chinese-study.service <<'EOF'
 [Unit]
-Description=Chinese Study website and material analyzer
+Description=Chinese Study website and MiniMax material analyzer
 After=network-online.target
 Wants=network-online.target
 [Service]
@@ -82,12 +82,7 @@ Unit=chinese-study-update.service
 [Install]
 WantedBy=timers.target
 EOF
-systemctl daemon-reload
-systemctl stop chinese-study-update.timer 2>/dev/null || true
-"$UPDATER"
-systemctl enable chinese-study.service chinese-study-update.timer >/dev/null
-systemctl restart chinese-study.service
-systemctl start chinese-study-update.timer
-sleep 1
-curl -fsS http://127.0.0.1:8910/api/health; echo
-echo "Готово. Сайт + AI-разбор материалов работают на 127.0.0.1:8910"
+systemctl daemon-reload; systemctl stop chinese-study-update.timer 2>/dev/null || true
+"$UPDATER"; systemctl enable chinese-study.service chinese-study-update.timer >/dev/null; systemctl restart chinese-study.service; systemctl start chinese-study-update.timer
+sleep 1; curl -fsS http://127.0.0.1:8910/api/health; echo
+echo "Готово. Сайт + MiniMax-разбор работают на 127.0.0.1:8910"
