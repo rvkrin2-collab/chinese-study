@@ -3,47 +3,23 @@ import base64, json, os, re, subprocess, tempfile, urllib.error, urllib.request
 from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
 from pathlib import Path
 
-APP = Path(os.environ.get("CHINESE_STUDY_DIR", "/opt/apps/chinese-study")).resolve()
-HOST = os.environ.get("CHINESE_STUDY_HOST", "127.0.0.1")
-PORT = int(os.environ.get("CHINESE_STUDY_PORT", "8910"))
-KEY = os.environ.get("MINIMAX_API_KEY", "").strip()
-API_HOST = os.environ.get("MINIMAX_API_HOST", "https://api.minimax.io").rstrip("/")
-MODEL = (os.environ.get("MINIMAX_MODEL", "MiniMax-M3").strip() or "MiniMax-M3")
-TEXT_URL = API_HOST + "/anthropic/v1/messages"
-VLM_URL = API_HOST + "/v1/coding_plan/vlm"
+APP = Path(os.environ.get('CHINESE_STUDY_DIR', '/opt/apps/chinese-study')).resolve()
+HOST = os.environ.get('CHINESE_STUDY_HOST', '127.0.0.1')
+PORT = int(os.environ.get('CHINESE_STUDY_PORT', '8910'))
+KEY = os.environ.get('MINIMAX_API_KEY', '').strip()
+API_HOST = os.environ.get('MINIMAX_API_HOST', 'https://api.minimax.io').rstrip('/')
+MODEL = (os.environ.get('MINIMAX_MODEL', 'MiniMax-M3').strip() or 'MiniMax-M3')
+TEXT_URL = API_HOST + '/anthropic/v1/messages'
+VLM_URL = API_HOST + '/v1/coding_plan/vlm'
 MAX_REQUEST = 18 * 1024 * 1024
 MAX_FILE = 12 * 1024 * 1024
 
-SYSTEM_PROMPT = """Ты методист по китайскому для русскоязычного ученика HSK3→HSK4.
+SYSTEM_PROMPT = '''Ты методист по китайскому для русскоязычного ученика HSK3→HSK4.
 На входе — текст учебного материала, уже извлечённый из фото/PDF/TXT, и иногда заметка пользователя.
 Не придумывай факты о содержании источника и не угадывай неразборчивый текст. При этом упражнения можно создавать новые по теме и лексике источника, чтобы материала хватало на несколько разных занятий.
 
 Верни ТОЛЬКО валидный JSON без markdown:
-{
-  "title_cn":"",
-  "title_pinyin":"",
-  "title_ru":"",
-  "summary_ru":"",
-  "source_text_cn":"",
-  "source_pinyin":"",
-  "words":[
-    {"hanzi":"","pinyin":"","translation_ru":"","hsk_level":4,
-     "example_cn":"","example_pinyin":"","example_ru":""}
-  ],
-  "grammar":[
-    {"pattern":"","meaning_ru":"","example_cn":"","example_pinyin":"",
-     "question":"","options":["","","",""],"answer":""}
-  ],
-  "readings":[
-    {"cn":"","pinyin":"","question":"","options":["","","",""],"answer_index":0}
-  ],
-  "builds":[
-    {"tokens":[""],"answer":"","pinyin":"","translation_ru":""}
-  ],
-  "productions":[
-    {"prompt_ru":"","answers":[""],"pinyin":""}
-  ]
-}
+{"title_cn":"","title_pinyin":"","title_ru":"","summary_ru":"","source_text_cn":"","source_pinyin":"","words":[{"hanzi":"","pinyin":"","translation_ru":"","hsk_level":4,"example_cn":"","example_pinyin":"","example_ru":""}],"grammar":[{"pattern":"","meaning_ru":"","example_cn":"","example_pinyin":"","question":"","options":["","","",""],"answer":""}],"readings":[{"cn":"","pinyin":"","question":"","options":["","","",""],"answer_index":0}],"builds":[{"tokens":[""],"answer":"","pinyin":"","translation_ru":""}],"productions":[{"prompt_ru":"","answers":[""],"pinyin":""}]}.
 
 Правила:
 - 10–20 действительно полезных слов/выражений, примерно HSK3–4. Не набивай список очевидными HSK1–2 словами ради количества.
@@ -59,210 +35,172 @@ SYSTEM_PROMPT = """Ты методист по китайскому для рус
 - В readings options всегда ровно 4 варианта, answer_index 0..3.
 - source_text_cn должен сохранять полезный исходный китайский текст максимально близко к источнику; не подменяй его сгенерированными упражнениями.
 - source_pinyin должен соответствовать source_text_cn.
-"""
+'''
 
-VISION_PROMPT = """Точно прочитай этот китайский учебный материал. Извлеки весь полезный текст: китайские слова, предложения, заголовки, вопросы, варианты ответов, подписи и краткие русские/английские пояснения, если они есть. Сохраняй порядок и формулировки. Не выдумывай неразборчивое. Ответь только распознанным содержанием обычным текстом; без анализа и без markdown."""
+VISION_PROMPT = '''Точно прочитай этот китайский учебный материал. Извлеки весь полезный текст: китайские слова, предложения, заголовки, вопросы, варианты ответов, подписи и краткие русские/английские пояснения, если они есть. Сохраняй порядок и формулировки. Не выдумывай неразборчивое. Ответь только распознанным содержанием обычным текстом; без анализа и без markdown.'''
 
-def http_json(url, payload, headers, timeout=120):
-    data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
-    req = urllib.request.Request(url, data=data, headers=headers, method="POST")
+TOPIC_STUDY_JS = r'''(()=>{
+const $=(s,r=document)=>r.querySelector(s), $$=(s,r=document)=>[...r.querySelectorAll(s)];
+function topic(id){try{return (typeof customTopicById==='function'&&customTopicById(id)) || (typeof TOPICS!=='undefined'&&TOPICS[id]) || null}catch{return null}}
+function words(t){return (t?.wordIds||[]).map(id=>WORDS.find(w=>String(w.id)===String(id))).filter(Boolean)}
+function prio(w){const s=ws(w.id);return (!s.seen?1000:0)+((s.due||0)<=now()?250:0)+(s.lapses||0)*30-(s.reps||0)+Math.random()}
+function shuffled(a){return [...(a||[])].sort(()=>Math.random()-.5)}
+function remember(){try{localStorage.setItem(KEY,JSON.stringify(state))}catch{}}
+
+const oldBuild=buildSession;
+buildSession=function(){
+  const id=state?.strictTopicNext;
+  if(!id) return oldBuild();
+  state.strictTopicNext=null; remember();
+  const t=topic(id); if(!t) return oldBuild();
+  const vw=words(t).sort((a,b)=>prio(b)-prio(a)).slice(0,5);
+  const li=shuffled(vw).slice(0,2);
+  const gr=shuffled(t.grammar||[]).slice(0,3);
+  const rd=shuffled(t.readings||[]).slice(0,2);
+  const bu=shuffled(t.builds||[]).slice(0,3);
+  const pr=shuffled(t.productions||[]).slice(0,2);
+  const seq=[
+    vw[0]&&{type:'vocab',w:vw[0]},gr[0]&&{type:'grammar',x:gr[0]},li[0]&&{type:'listening',w:li[0]},
+    vw[1]&&{type:'vocab',w:vw[1]},rd[0]&&{type:'reading',x:rd[0]},bu[0]&&{type:'sentence',x:bu[0]},
+    vw[2]&&{type:'vocab',w:vw[2]},gr[1]&&{type:'grammar',x:gr[1]},li[1]&&{type:'listening',w:li[1]},
+    vw[3]&&{type:'vocab',w:vw[3]},pr[0]&&{type:'production',x:pr[0]},bu[1]&&{type:'sentence',x:bu[1]},
+    vw[4]&&{type:'vocab',w:vw[4]},rd[1]&&{type:'reading',x:rd[1]},gr[2]&&{type:'grammar',x:gr[2]},
+    pr[1]&&{type:'production',x:pr[1]},bu[2]&&{type:'sentence',x:bu[2]}
+  ].filter(Boolean);
+  lessonSteps=seq; lessonPos=0; lessonStats={vocab:0,listening:0,grammar:0,reading:0,sentence:0,production:0};
+};
+
+window.studyMaterialOnly=function(id){
+  const t=topic(id); if(!t)return;
+  state.strictTopicNext=id; state.activeTopic={id,started:now(),until:now()+3*DAY}; remember(); openSession();
+};
+
+function enhance(){
+  const items=[...(state.materials||[])].reverse();
+  $$('#customMaterials .topiccard').forEach((card,i)=>{
+    const m=items[i], id=m?.topicId; if(!id||!topic(id))return;
+    let actions=$('.custom-topic-actions',card); if(!actions){actions=document.createElement('div');actions.className='custom-topic-actions';card.appendChild(actions)}
+    if(!$('.study-only-btn',actions)){
+      const b=document.createElement('button'); b.className='primary study-only-btn'; b.textContent='Изучать отдельно'; b.onclick=()=>studyMaterialOnly(id); actions.prepend(b);
+    }
+    const mixed=$$('button',actions).find(b=>!b.classList.contains('study-only-btn') && /Начать тему|Изучать эту тему|В фокус/.test(b.textContent||''));
+    if(mixed){mixed.classList.remove('primary');mixed.classList.add('ghost');mixed.textContent='Добавить в общие уроки'}
+    if(!$('.separate-note',card)){
+      const n=document.createElement('div'); n.className='topic-study-note separate-note';
+      n.innerHTML='<b>Изучать отдельно</b> — только слова и задания этой темы. <b>Добавить в общие уроки</b> — тема будет чаще попадаться в смешанных занятиях.'; actions.after(n);
+    }
+  });
+  const shop=$('#topic-shopping');
+  if(shop && !$('.study-shop-only',shop)){
+    const ref=$('#startShoppingTopic',shop); const b=document.createElement('button'); b.className='primary study-shop-only'; b.textContent='Изучать отдельно'; b.onclick=()=>studyMaterialOnly('shopping');
+    if(ref){ref.classList.remove('primary');ref.classList.add('ghost');ref.textContent='Добавить в общие уроки';ref.before(b)}else shop.appendChild(b);
+  }
+}
+
+const oldRender=renderMaterials;
+renderMaterials=function(){oldRender();enhance()};
+if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',()=>setTimeout(enhance,0));else setTimeout(enhance,0);
+})();'''
+
+def http_json(url,payload,headers,timeout=120):
+    data=json.dumps(payload,ensure_ascii=False).encode('utf-8'); req=urllib.request.Request(url,data=data,headers=headers,method='POST')
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as r:
-            raw = r.read().decode("utf-8", "replace")
-            obj = json.loads(raw)
+        with urllib.request.urlopen(req,timeout=timeout) as r: obj=json.loads(r.read().decode('utf-8','replace'))
     except urllib.error.HTTPError as e:
-        body = e.read().decode("utf-8", "replace")[:1200]
-        if e.code in (401, 403):
-            raise RuntimeError("MiniMax отклонил API-ключ.")
-        if e.code == 429:
-            raise RuntimeError("MiniMax: превышен лимит или закончилась квота.")
-        raise RuntimeError(f"MiniMax API {e.code}: {body}")
-    except urllib.error.URLError as e:
-        raise RuntimeError("VPS не смог подключиться к MiniMax API.") from e
-    except json.JSONDecodeError as e:
-        raise RuntimeError("MiniMax вернул ответ не в JSON.") from e
-    base = obj.get("base_resp") or {}
-    code = base.get("status_code")
-    if code not in (None, 0):
-        msg = base.get("status_msg") or "неизвестная ошибка"
-        if code == 1004:
-            raise RuntimeError("MiniMax отклонил API-ключ.")
-        raise RuntimeError(f"MiniMax API {code}: {msg}")
+        body=e.read().decode('utf-8','replace')[:1200]
+        if e.code in (401,403): raise RuntimeError('MiniMax отклонил API-ключ.')
+        if e.code==429: raise RuntimeError('MiniMax: превышен лимит или закончилась квота.')
+        raise RuntimeError(f'MiniMax API {e.code}: {body}')
+    except urllib.error.URLError as e: raise RuntimeError('VPS не смог подключиться к MiniMax API.') from e
+    except json.JSONDecodeError as e: raise RuntimeError('MiniMax вернул ответ не в JSON.') from e
+    base=obj.get('base_resp') or {}; code=base.get('status_code')
+    if code not in (None,0):
+        if code==1004: raise RuntimeError('MiniMax отклонил API-ключ.')
+        raise RuntimeError(f"MiniMax API {code}: {base.get('status_msg') or 'неизвестная ошибка'}")
     return obj
 
-def vlm_read_image(mime, raw, page_label=""):
-    if mime not in ("image/jpeg", "image/png", "image/webp"):
-        mime = "image/jpeg"
-    data_url = f"data:{mime};base64," + base64.b64encode(raw).decode("ascii")
-    payload = {
-        "prompt": VISION_PROMPT + (f"\nЭто {page_label}." if page_label else ""),
-        "image_url": data_url,
-    }
-    resp = http_json(
-        VLM_URL,
-        payload,
-        {
-            "Authorization": "Bearer " + KEY,
-            "MM-API-Source": "Minimax-MCP",
-            "Content-Type": "application/json",
-        },
-        timeout=120,
-    )
-    text = str(resp.get("content") or "").strip()
-    if not text:
-        raise RuntimeError("MiniMax VLM не вернул распознанный текст.")
+def vlm_read_image(mime,raw,page_label=''):
+    if mime not in ('image/jpeg','image/png','image/webp'): mime='image/jpeg'
+    payload={'prompt':VISION_PROMPT+(f'\nЭто {page_label}.' if page_label else ''),'image_url':f'data:{mime};base64,'+base64.b64encode(raw).decode('ascii')}
+    resp=http_json(VLM_URL,payload,{'Authorization':'Bearer '+KEY,'MM-API-Source':'Minimax-MCP','Content-Type':'application/json'},120)
+    text=str(resp.get('content') or '').strip()
+    if not text: raise RuntimeError('MiniMax VLM не вернул распознанный текст.')
     return text
 
 def pdf_to_images(raw):
-    if not any((Path(d) / "pdftoppm").is_file() for d in os.environ.get("PATH", "").split(":")):
-        raise RuntimeError("Для PDF не установлен poppler-utils.")
-    pages = []
-    with tempfile.TemporaryDirectory(prefix="chinese-pdf-") as td:
-        src = Path(td) / "input.pdf"
-        src.write_bytes(raw)
-        prefix = str(Path(td) / "page")
-        proc = subprocess.run(
-            ["pdftoppm", "-jpeg", "-f", "1", "-l", "8", "-r", "130", "-scale-to", "1800", str(src), prefix],
-            capture_output=True,
-            timeout=60,
-        )
-        if proc.returncode:
-            raise RuntimeError("Не удалось прочитать PDF.")
-        for f in sorted(Path(td).glob("page-*.jpg"))[:8]:
-            pages.append(f.read_bytes())
-    if not pages:
-        raise RuntimeError("PDF не содержит доступных страниц.")
+    if not any((Path(d)/'pdftoppm').is_file() for d in os.environ.get('PATH','').split(':')): raise RuntimeError('Для PDF не установлен poppler-utils.')
+    pages=[]
+    with tempfile.TemporaryDirectory(prefix='chinese-pdf-') as td:
+        src=Path(td)/'input.pdf'; src.write_bytes(raw); prefix=str(Path(td)/'page')
+        proc=subprocess.run(['pdftoppm','-jpeg','-f','1','-l','8','-r','130','-scale-to','1800',str(src),prefix],capture_output=True,timeout=60)
+        if proc.returncode: raise RuntimeError('Не удалось прочитать PDF.')
+        for f in sorted(Path(td).glob('page-*.jpg'))[:8]: pages.append(f.read_bytes())
+    if not pages: raise RuntimeError('PDF не содержит доступных страниц.')
     return pages
 
 def parse_model_json(s):
-    s = (s or "").strip()
-    s = re.sub(r"^```(?:json)?\s*|\s*```$", "", s, flags=re.I)
-    try:
-        return json.loads(s)
+    s=(s or '').strip(); s=re.sub(r'^```(?:json)?\s*|\s*```$','',s,flags=re.I)
+    try:return json.loads(s)
     except json.JSONDecodeError:
-        a, b = s.find("{"), s.rfind("}")
-        if a >= 0 and b > a:
-            return json.loads(s[a:b + 1])
-        raise RuntimeError("MiniMax вернул некорректный JSON темы.")
+        a,b=s.find('{'),s.rfind('}')
+        if a>=0 and b>a:return json.loads(s[a:b+1])
+        raise RuntimeError('MiniMax вернул некорректный JSON темы.')
 
-def text_analyze(extracted, note=""):
-    user_text = "Собери из этого материала новую учебную тему с большим запасом разнообразных упражнений минимум на несколько занятий.\n\nИЗВЛЕЧЁННЫЙ МАТЕРИАЛ:\n" + extracted[:90000]
-    if note:
-        user_text += "\n\nЗАМЕТКА ПОЛЬЗОВАТЕЛЯ:\n" + note[:12000]
-    payload = {
-        "model": MODEL,
-        "max_tokens": 14000,
-        "system": SYSTEM_PROMPT,
-        "messages": [{"role": "user", "content": user_text}],
-    }
-    resp = http_json(
-        TEXT_URL,
-        payload,
-        {
-            "X-Api-Key": KEY,
-            "Authorization": "Bearer " + KEY,
-            "Content-Type": "application/json",
-            "anthropic-version": "2023-06-01",
-        },
-        timeout=220,
-    )
-    parts = []
-    for item in resp.get("content", []):
-        if item.get("type") == "text" and item.get("text"):
-            parts.append(item["text"])
-    if not parts:
-        raise RuntimeError("MiniMax M3 не вернул текстовый результат.")
-    out = parse_model_json("\n".join(parts))
-    required = [
-        "title_cn", "title_pinyin", "title_ru", "summary_ru", "source_text_cn",
-        "source_pinyin", "words", "grammar", "readings", "builds", "productions",
-    ]
-    missing = [k for k in required if k not in out]
-    if missing:
-        raise RuntimeError("В ответе MiniMax не хватает полей: " + ", ".join(missing))
+def text_analyze(extracted,note=''):
+    user_text='Собери из этого материала новую учебную тему с большим запасом разнообразных упражнений минимум на несколько занятий.\n\nИЗВЛЕЧЁННЫЙ МАТЕРИАЛ:\n'+extracted[:90000]
+    if note:user_text+='\n\nЗАМЕТКА ПОЛЬЗОВАТЕЛЯ:\n'+note[:12000]
+    payload={'model':MODEL,'max_tokens':14000,'system':SYSTEM_PROMPT,'messages':[{'role':'user','content':user_text}]}
+    resp=http_json(TEXT_URL,payload,{'X-Api-Key':KEY,'Authorization':'Bearer '+KEY,'Content-Type':'application/json','anthropic-version':'2023-06-01'},220)
+    parts=[x.get('text','') for x in resp.get('content',[]) if x.get('type')=='text' and x.get('text')]
+    if not parts: raise RuntimeError('MiniMax M3 не вернул текстовый результат.')
+    out=parse_model_json('\n'.join(parts)); req=['title_cn','title_pinyin','title_ru','summary_ru','source_text_cn','source_pinyin','words','grammar','readings','builds','productions']
+    missing=[k for k in req if k not in out]
+    if missing: raise RuntimeError('В ответе MiniMax не хватает полей: '+', '.join(missing))
     return out
 
 def analyze(payload):
-    if not KEY:
-        raise RuntimeError("На VPS не настроен MINIMAX_API_KEY.")
-    note = str(payload.get("text") or "").strip()
-    mime = str(payload.get("mime_type") or "").lower().split(";")[0]
-    b64 = str(payload.get("data_base64") or "")
-    if not note and not b64:
-        raise ValueError("Добавь текст, фото или PDF.")
-
-    extracted_parts = []
+    if not KEY: raise RuntimeError('На VPS не настроен MINIMAX_API_KEY.')
+    note=str(payload.get('text') or '').strip(); mime=str(payload.get('mime_type') or '').lower().split(';')[0]; b64=str(payload.get('data_base64') or '')
+    if not note and not b64: raise ValueError('Добавь текст, фото или PDF.')
+    parts=[]
     if b64:
-        try:
-            raw = base64.b64decode(b64, validate=True)
-        except Exception as e:
-            raise ValueError("Не удалось прочитать файл.") from e
-        if len(raw) > MAX_FILE:
-            raise ValueError("Файл больше 12 МБ.")
-
-        if mime == "application/pdf":
-            for i, page in enumerate(pdf_to_images(raw), 1):
-                extracted_parts.append(f"--- Страница {i} ---\n" + vlm_read_image("image/jpeg", page, f"страница {i} PDF"))
-        elif mime in ("image/jpeg", "image/png", "image/webp"):
-            extracted_parts.append(vlm_read_image(mime, raw))
-        elif mime == "image/gif":
-            raise ValueError("GIF не поддерживается MiniMax VLM. Сохрани кадр как JPG/PNG/WebP.")
-        elif mime.startswith("text/") or mime in ("application/octet-stream", ""):
-            extracted_parts.append(raw.decode("utf-8", "replace")[:90000])
-        else:
-            raise ValueError("Поддерживаются JPG, PNG, WebP, PDF и TXT.")
-
-    extracted = "\n\n".join(x for x in extracted_parts if x.strip())
-    if not extracted:
-        extracted = note
-        note = ""
-    return text_analyze(extracted, note)
+        try: raw=base64.b64decode(b64,validate=True)
+        except Exception as e: raise ValueError('Не удалось прочитать файл.') from e
+        if len(raw)>MAX_FILE: raise ValueError('Файл больше 12 МБ.')
+        if mime=='application/pdf':
+            for i,page in enumerate(pdf_to_images(raw),1): parts.append(f'--- Страница {i} ---\n'+vlm_read_image('image/jpeg',page,f'страница {i} PDF'))
+        elif mime in ('image/jpeg','image/png','image/webp'): parts.append(vlm_read_image(mime,raw))
+        elif mime=='image/gif': raise ValueError('GIF не поддерживается MiniMax VLM. Сохрани кадр как JPG/PNG/WebP.')
+        elif mime.startswith('text/') or mime in ('application/octet-stream',''): parts.append(raw.decode('utf-8','replace')[:90000])
+        else: raise ValueError('Поддерживаются JPG, PNG, WebP, PDF и TXT.')
+    extracted='\n\n'.join(x for x in parts if x.strip())
+    if not extracted: extracted,note=note,''
+    return text_analyze(extracted,note)
 
 class Handler(SimpleHTTPRequestHandler):
-    server_version = "ChineseStudy/3.9"
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, directory=str(APP), **kwargs)
-
-    def send_json(self, status, obj):
-        body = json.dumps(obj, ensure_ascii=False).encode("utf-8")
-        self.send_response(status)
-        self.send_header("Content-Type", "application/json; charset=utf-8")
-        self.send_header("Content-Length", str(len(body)))
-        self.send_header("Cache-Control", "no-store")
-        self.end_headers()
-        self.wfile.write(body)
-
+    server_version='ChineseStudy/4.1'
+    def __init__(self,*a,**kw): super().__init__(*a,directory=str(APP),**kw)
+    def send_bytes(self,status,body,ctype,cache='no-store'):
+        self.send_response(status); self.send_header('Content-Type',ctype); self.send_header('Content-Length',str(len(body))); self.send_header('Cache-Control',cache); self.end_headers(); self.wfile.write(body)
+    def send_json(self,status,obj): self.send_bytes(status,json.dumps(obj,ensure_ascii=False).encode('utf-8'),'application/json; charset=utf-8')
     def do_GET(self):
-        if self.path.rstrip("/") == "/api/health":
-            return self.send_json(200, {
-                "ok": True,
-                "version": "3.9",
-                "provider": "MiniMax",
-                "ai_configured": bool(KEY),
-                "model": MODEL,
-                "vision": "coding_plan/vlm",
-            })
+        path=self.path.split('?',1)[0]
+        if path.rstrip('/')=='/api/health': return self.send_json(200,{'ok':True,'version':'4.1','provider':'MiniMax','ai_configured':bool(KEY),'model':MODEL,'vision':'coding_plan/vlm','separate_topic_mode':True})
+        if path=='/topic-study.js': return self.send_bytes(200,TOPIC_STUDY_JS.encode('utf-8'),'application/javascript; charset=utf-8')
+        if path in ('/','/index.html'):
+            p=APP/'index.html'
+            if p.is_file():
+                html=p.read_text(encoding='utf-8'); html=re.sub(r'<script src="topic-study\.js\?v=[^"]+"></script>\s*','',html); html=html.replace('</body>','<script src="topic-study.js?v=4.1"></script>\n</body>')
+                return self.send_bytes(200,html.encode('utf-8'),'text/html; charset=utf-8','no-cache')
         return super().do_GET()
-
     def do_POST(self):
-        if self.path.rstrip("/") != "/api/materials/analyze":
-            return self.send_json(404, {"error": "not found"})
-        try:
-            n = int(self.headers.get("Content-Length", "0"))
-        except Exception:
-            n = 0
-        if n <= 0 or n > MAX_REQUEST:
-            return self.send_json(413, {"error": "Слишком большой запрос."})
-        try:
-            payload = json.loads(self.rfile.read(n).decode("utf-8"))
-            return self.send_json(200, analyze(payload))
-        except ValueError as e:
-            return self.send_json(400, {"error": str(e)})
-        except Exception as e:
-            return self.send_json(502, {"error": str(e)})
+        if self.path.rstrip('/')!='/api/materials/analyze': return self.send_json(404,{'error':'not found'})
+        try:n=int(self.headers.get('Content-Length','0'))
+        except:n=0
+        if n<=0 or n>MAX_REQUEST:return self.send_json(413,{'error':'Слишком большой запрос.'})
+        try:return self.send_json(200,analyze(json.loads(self.rfile.read(n).decode('utf-8'))))
+        except ValueError as e:return self.send_json(400,{'error':str(e)})
+        except Exception as e:return self.send_json(502,{'error':str(e)})
 
-if __name__ == "__main__":
-    APP.mkdir(parents=True, exist_ok=True)
-    print(f"Chinese Study 3.9 + MiniMax on http://{HOST}:{PORT}", flush=True)
-    ThreadingHTTPServer((HOST, PORT), Handler).serve_forever()
+if __name__=='__main__':
+    APP.mkdir(parents=True,exist_ok=True); print(f'Chinese Study 4.1 + MiniMax on http://{HOST}:{PORT}',flush=True); ThreadingHTTPServer((HOST,PORT),Handler).serve_forever()
