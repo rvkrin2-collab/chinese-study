@@ -128,6 +128,60 @@ window.toggleMaterialSource=function(id,btn){
   btn.textContent=box.classList.contains("hidden")?"Показать текст":"Скрыть текст";
 };
 
+
+function currentImportMode(){
+  const modal=document.getElementById("aiMatModal");
+  return modal?.querySelector('input[name="importStudyMode"]:checked')?.value||"full";
+}
+function syncImportMode(){
+  const modal=document.getElementById("aiMatModal");if(!modal)return;
+  const words=currentImportMode()==="words";
+  const note=modal.querySelector(".import-mode-note");
+  if(note)note.textContent=words?"Будут добавлены только отмеченные слова. Урок — слова и аудирование, без грамматики и чтения.":"Будут добавлены слова, грамматика, чтение, сборка фраз и активный перевод.";
+  const confirm=modal.querySelector("#aimConfirm");
+  if(confirm)confirm.textContent=words?"Добавить слова и начать":"Добавить и начать изучать";
+}
+function ensureImportMode(){
+  const modal=document.getElementById("aiMatModal");if(!modal)return;
+  if(!modal.querySelector(".import-mode-box")){
+    const box=document.createElement("div");
+    box.className="import-mode-box";
+    box.style.cssText="margin:14px 0;padding:12px;border:1px solid var(--line,#ddd);border-radius:12px;background:var(--paper2,#fafafa)";
+    box.innerHTML='<div style="font-weight:800;margin-bottom:8px">Режим изучения</div><div style="display:flex;gap:18px;flex-wrap:wrap"><label style="display:flex;gap:7px;align-items:center"><input type="radio" name="importStudyMode" value="full" checked> Полная тема</label><label style="display:flex;gap:7px;align-items:center"><input type="radio" name="importStudyMode" value="words"> Только новые слова</label></div><div class="tiny import-mode-note" style="margin-top:7px"></div>';
+    const drop=modal.querySelector(".aim-drop");
+    if(drop)drop.after(box);else modal.querySelector(".aim-box")?.prepend(box);
+    box.addEventListener("change",syncImportMode);
+  }
+  syncImportMode();
+}
+
+document.addEventListener("click",e=>{
+  const btn=e.target.closest?.("#aimConfirm");if(!btn)return;
+  if(currentImportMode()!=="words")return;
+  const before=new Set((state.customTopics||[]).map(t=>String(t.id)));
+  setTimeout(()=>{
+    const created=[...(state.customTopics||[])].reverse().find(t=>!before.has(String(t.id)));
+    if(!created)return;
+    created.grammar=[];
+    created.readings=[];
+    created.builds=[];
+    created.productions=[];
+    created.studyMode="words";
+    const material=[...(state.materials||[])].reverse().find(m=>String(m.topicId)===String(created.id));
+    if(material)material.studyMode="words";
+    state.topicLessonNext=null;
+    state.strictTopicNext=created.id;
+    saveState();
+  },0);
+},true);
+
+const importObserver=new MutationObserver(()=>{ensureImportMode();syncImportMode()});
+function bootImportMode(){
+  ensureImportMode();
+  if(document.body)importObserver.observe(document.body,{childList:true,subtree:true});
+}
+if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",bootImportMode);else bootImportMode();
+
 function materialCards(holder,items){
   const raw=[...holder.querySelectorAll("article, .card, .topiccard, [data-material-id]")];
   const unique=[...new Set(raw)].filter(el=>
@@ -176,7 +230,7 @@ function enhance(){
     if(id&&t){
       const b=document.createElement("button");
       b.className="primary study-only-btn";
-      b.textContent="Изучать этот материал";
+      b.textContent=t.studyMode==="words"?"Изучать слова":"Изучать этот материал";
       b.onclick=()=>studyMaterialOnly(id);
       actions.prepend(b);
 
@@ -308,7 +362,7 @@ def analyze(payload):
     return text_analyze(extracted,note)
 
 class Handler(SimpleHTTPRequestHandler):
-    server_version="ChineseStudy/4.4"
+    server_version="ChineseStudy/4.5"
     def __init__(self,*a,**kw):super().__init__(*a,directory=str(APP),**kw)
     def send_bytes(self,status,body,ctype,cache="no-store"):
         self.send_response(status);self.send_header("Content-Type",ctype);self.send_header("Content-Length",str(len(body)));self.send_header("Cache-Control",cache);self.end_headers();self.wfile.write(body)
@@ -316,7 +370,7 @@ class Handler(SimpleHTTPRequestHandler):
     def do_GET(self):
         path=self.path.split("?",1)[0]
         if path.rstrip("/")=="/api/health":
-            return self.send_json(200,{"ok":True,"version":"4.4","provider":"MiniMax","ai_configured":bool(KEY),"model":MODEL,"vision":"coding_plan/vlm","saved_material_actions":True})
+            return self.send_json(200,{"ok":True,"version":"4.5","provider":"MiniMax","ai_configured":bool(KEY),"model":MODEL,"vision":"coding_plan/vlm","saved_material_actions":True,"word_only_import":True})
         if path=="/topic-study.js":
             return self.send_bytes(200,TOPIC_STUDY_JS.encode("utf-8"),"application/javascript; charset=utf-8")
         if path in ("/","/index.html"):
@@ -324,7 +378,7 @@ class Handler(SimpleHTTPRequestHandler):
             if p.is_file():
                 html=p.read_text(encoding="utf-8")
                 html=re.sub(r'<script src="topic-study\.js\?v=[^"]+"></script>\s*',"",html)
-                html=html.replace("</body>",'<script src="topic-study.js?v=4.4"></script>\n</body>')
+                html=html.replace("</body>",'<script src="topic-study.js?v=4.5"></script>\n</body>')
                 return self.send_bytes(200,html.encode("utf-8"),"text/html; charset=utf-8","no-cache")
         return super().do_GET()
     def do_POST(self):
@@ -338,5 +392,5 @@ class Handler(SimpleHTTPRequestHandler):
 
 if __name__=="__main__":
     APP.mkdir(parents=True,exist_ok=True)
-    print(f"Chinese Study 4.4 + MiniMax on http://{HOST}:{PORT}",flush=True)
+    print(f"Chinese Study 4.5 + MiniMax on http://{HOST}:{PORT}",flush=True)
     ThreadingHTTPServer((HOST,PORT),Handler).serve_forever()
