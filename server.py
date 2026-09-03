@@ -176,7 +176,7 @@ function enhance(){
     if(id&&t){
       const b=document.createElement("button");
       b.className="primary study-only-btn";
-      b.textContent="Изучать этот материал";
+      b.textContent=t.studyMode==="words"?"Изучать слова":"Изучать этот материал";
       b.onclick=()=>studyMaterialOnly(id);
       actions.prepend(b);
 
@@ -308,7 +308,7 @@ def analyze(payload):
     return text_analyze(extracted,note)
 
 class Handler(SimpleHTTPRequestHandler):
-    server_version="ChineseStudy/4.4"
+    server_version="ChineseStudy/4.6"
     def __init__(self,*a,**kw):super().__init__(*a,directory=str(APP),**kw)
     def send_bytes(self,status,body,ctype,cache="no-store"):
         self.send_response(status);self.send_header("Content-Type",ctype);self.send_header("Content-Length",str(len(body)));self.send_header("Cache-Control",cache);self.end_headers();self.wfile.write(body)
@@ -316,7 +316,7 @@ class Handler(SimpleHTTPRequestHandler):
     def do_GET(self):
         path=self.path.split("?",1)[0]
         if path.rstrip("/")=="/api/health":
-            return self.send_json(200,{"ok":True,"version":"4.4","provider":"MiniMax","ai_configured":bool(KEY),"model":MODEL,"vision":"coding_plan/vlm","saved_material_actions":True})
+            return self.send_json(200,{"ok":True,"version":"4.6","provider":"MiniMax","ai_configured":bool(KEY),"model":MODEL,"vision":"coding_plan/vlm","saved_material_actions":True})
         if path=="/topic-study.js":
             return self.send_bytes(200,TOPIC_STUDY_JS.encode("utf-8"),"application/javascript; charset=utf-8")
         if path in ("/","/index.html"):
@@ -324,7 +324,7 @@ class Handler(SimpleHTTPRequestHandler):
             if p.is_file():
                 html=p.read_text(encoding="utf-8")
                 html=re.sub(r'<script src="topic-study\.js\?v=[^"]+"></script>\s*',"",html)
-                html=html.replace("</body>",'<script src="topic-study.js?v=4.4"></script>\n</body>')
+                html=html.replace("</body>",'<script src="topic-study.js?v=4.6"></script>\n</body>')
                 return self.send_bytes(200,html.encode("utf-8"),"text/html; charset=utf-8","no-cache")
         return super().do_GET()
     def do_POST(self):
@@ -338,5 +338,5 @@ class Handler(SimpleHTTPRequestHandler):
 
 if __name__=="__main__":
     APP.mkdir(parents=True,exist_ok=True)
-    print(f"Chinese Study 4.4 + MiniMax on http://{HOST}:{PORT}",flush=True)
+    print(f"Chinese Study 4.6 + MiniMax on http://{HOST}:{PORT}",flush=True)
     ThreadingHTTPServer((HOST,PORT),Handler).serve_forever()
