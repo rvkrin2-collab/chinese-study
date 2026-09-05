@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-import base64, json, os, re, subprocess, tempfile, urllib.error, urllib.request
+import base64, json, os, re, subprocess, tempfile, time, urllib.error, urllib.request
 from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
 from pathlib import Path
 
@@ -13,6 +13,8 @@ TEXT_URL = API_HOST + "/anthropic/v1/messages"
 VLM_URL = API_HOST + "/v1/coding_plan/vlm"
 MAX_REQUEST = 18 * 1024 * 1024
 MAX_FILE = 12 * 1024 * 1024
+STATE_FILE = Path(os.environ.get("CHINESE_STUDY_STATE_FILE", "/var/lib/chinese-study/state.json"))
+MAX_STATE = 4 * 1024 * 1024
 
 SYSTEM_PROMPT = """Ты методист по китайскому для русскоязычного ученика HSK3→HSK4.
 На входе — текст учебного материала, уже извлечённый из фото/PDF/TXT, и иногда заметка пользователя.
@@ -32,6 +34,7 @@ SYSTEM_PROMPT = """Ты методист по китайскому для рус
 - для всех китайских слов, примеров и ответов дай pinyin с тонами.
 - hsk_level только 3 или 4.
 - grammar.options всегда 4 варианта, answer дословно равен одному из них.
+- grammar.options должны быть попарно различными; только один вариант должен удовлетворять проверяемой конструкции.
 - readings.options всегда 4 варианта, answer_index 0..3.
 - source_text_cn сохраняй максимально близко к источнику.
 - source_pinyin должен соответствовать source_text_cn.
@@ -217,6 +220,41 @@ if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",
 else setTimeout(enhance,0);
 })();"""
 
+CLOUD_SYNC_JS = r"""(()=>{
+const API='api/state';let rev=0,busy=false,pushTimer=null;
+const arr=x=>Array.isArray(x)?x:[];
+function stampDay(v){if(!v)return 0;const p=String(v).split('-').map(Number);return p.length===3?new Date(p[0],p[1]-1,p[2]).getTime():0}
+function uniq(a,key,limit){const m=new Map();for(const x of arr(a)){const k=key(x);if(k!=null&&k!=='')m.set(String(k),x)}const z=[...m.values()];return limit?z.slice(-limit):z}
+function mergeById(r,l,limit){return uniq([...arr(r),...arr(l)],x=>x?.id??x?.topicId??JSON.stringify(x),limit)}
+function mergeHistory(r,l){return uniq([...arr(r),...arr(l)],x=>[x?.ts,x?.id??'',x?.source??'',x?.grade??'',x?.ok??''].join('|'),1400).sort((a,b)=>(a.ts||0)-(b.ts||0)).slice(-1400)}
+function mergeWords(r,l){const out={...(r||{})};for(const [id,v] of Object.entries(l||{})){const a=out[id];if(!a){out[id]=v;continue}const al=Number(a.last||0),vl=Number(v?.last||0);if(vl>al)out[id]=v;else if(vl===al){const as=(a.seen||0)+(a.reps||0)+(a.lapses||0),vs=(v?.seen||0)+(v?.reps||0)+(v?.lapses||0);if(vs>as)out[id]=v}}return out}
+function mergeSkills(r,l){const out={...(r||{})};for(const [k,v] of Object.entries(l||{})){const a=out[k]||{};out[k]=(Number(v?.total||0)>Number(a.total||0))?v:a}return out}
+function mergeState(remote,local){remote=remote&&typeof remote==='object'?remote:{};local=local&&typeof local==='object'?local:{};const o={...remote,...local};o.words=mergeWords(remote.words,local.words);o.history=mergeHistory(remote.history,local.history);o.skills=mergeSkills(remote.skills,local.skills);o.materials=mergeById(remote.materials,local.materials,60);o.customWords=mergeById(remote.customWords,local.customWords);o.customTopics=mergeById(remote.customTopics,local.customTopics);o.recentTasks=uniq([...arr(remote.recentTasks),...arr(local.recentTasks)],x=>String(x),50);o.recentVocabModes=uniq([...arr(remote.recentVocabModes),...arr(local.recentVocabModes)],x=>String(x),24);o.sessions=Math.max(Number(remote.sessions||0),Number(local.sessions||0));o.streak=Math.max(Number(remote.streak||1),Number(local.streak||1));o.lastDay=stampDay(local.lastDay)>=stampDay(remote.lastDay)?local.lastDay:remote.lastDay;o.activeTopic=local.activeTopic||remote.activeTopic||null;return o}
+function hydrate(){for(const w of arr(state.customWords)){if(typeof WORDS!=='undefined'&&!WORDS.some(x=>String(x.id)===String(w.id)))WORDS.push(w)}}
+function apply(next){state=next;try{localStorage.setItem(KEY,JSON.stringify(state))}catch{}hydrate();try{renderAll()}catch{}}
+async function post(){if(busy)return;busy=true;try{const r=await fetch(API,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({base_rev:rev,state}),cache:'no-store'});const d=await r.json().catch(()=>({}));if(r.status===409){rev=Number(d.rev||0);apply(mergeState(d.state||{},state));busy=false;return post()}if(r.ok)rev=Number(d.rev||rev)}catch{}finally{busy=false}}
+function schedule(){clearTimeout(pushTimer);pushTimer=setTimeout(post,450)}
+async function pull(first=false){try{const r=await fetch(API,{cache:'no-store'});if(!r.ok)return;const d=await r.json();const rr=Number(d.rev||0);if(!d.state){rev=rr;return post()}if(!first&&rr<=rev)return;const merged=mergeState(d.state,state);rev=rr;apply(merged);if(JSON.stringify(merged)!==JSON.stringify(d.state))schedule()}catch{}}
+const originalSave=save;save=function(){originalSave();schedule()};
+function boot(){pull(true);setInterval(()=>{pull(false);schedule()},15000);document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden')schedule();else pull(false)});window.addEventListener('pagehide',()=>{try{fetch(API,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({base_rev:rev,state}),keepalive:true})}catch{}})}
+if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot,{once:true});else boot();
+})();"""
+
+def read_sync_state():
+    try:
+        obj=json.loads(STATE_FILE.read_text(encoding="utf-8"))
+        if isinstance(obj,dict) and isinstance(obj.get("rev",0),int):return obj
+    except Exception:pass
+    return {"rev":0,"updated_at":0,"state":None}
+
+def write_sync_state(value, current_rev):
+    STATE_FILE.parent.mkdir(parents=True,exist_ok=True)
+    payload={"rev":int(current_rev)+1,"updated_at":int(time.time()*1000),"state":value}
+    tmp=STATE_FILE.with_name(STATE_FILE.name+".tmp")
+    tmp.write_text(json.dumps(payload,ensure_ascii=False,separators=(",",":")),encoding="utf-8")
+    os.replace(tmp,STATE_FILE)
+    return payload
+
 def http_json(url, payload, headers, timeout=120):
     data=json.dumps(payload,ensure_ascii=False).encode("utf-8")
     req=urllib.request.Request(url,data=data,headers=headers,method="POST")
@@ -308,7 +346,7 @@ def analyze(payload):
     return text_analyze(extracted,note)
 
 class Handler(SimpleHTTPRequestHandler):
-    server_version="ChineseStudy/4.6"
+    server_version="ChineseStudy/4.7"
     def __init__(self,*a,**kw):super().__init__(*a,directory=str(APP),**kw)
     def send_bytes(self,status,body,ctype,cache="no-store"):
         self.send_response(status);self.send_header("Content-Type",ctype);self.send_header("Content-Length",str(len(body)));self.send_header("Cache-Control",cache);self.end_headers();self.wfile.write(body)
@@ -317,6 +355,10 @@ class Handler(SimpleHTTPRequestHandler):
         path=self.path.split("?",1)[0]
         if path.rstrip("/")=="/api/health":
             return self.send_json(200,{"ok":True,"version":"4.6","provider":"MiniMax","ai_configured":bool(KEY),"model":MODEL,"vision":"coding_plan/vlm","saved_material_actions":True})
+        if path.rstrip("/")=="/api/state":
+            return self.send_json(200,read_sync_state())
+        if path=="/cloud-sync.js":
+            return self.send_bytes(200,CLOUD_SYNC_JS.encode("utf-8"),"application/javascript; charset=utf-8")
         if path=="/topic-study.js":
             return self.send_bytes(200,TOPIC_STUDY_JS.encode("utf-8"),"application/javascript; charset=utf-8")
         if path in ("/","/index.html"):
@@ -324,11 +366,24 @@ class Handler(SimpleHTTPRequestHandler):
             if p.is_file():
                 html=p.read_text(encoding="utf-8")
                 html=re.sub(r'<script src="topic-study\.js\?v=[^"]+"></script>\s*',"",html)
-                html=html.replace("</body>",'<script src="topic-study.js?v=4.6"></script>\n</body>')
+                html=html.replace("</body>",'<script src="topic-study.js?v=4.7"></script>\n<script src="cloud-sync.js?v=4.7"></script>\n</body>')
                 return self.send_bytes(200,html.encode("utf-8"),"text/html; charset=utf-8","no-cache")
         return super().do_GET()
     def do_POST(self):
-        if self.path.rstrip("/")!="/api/materials/analyze":return self.send_json(404,{"error":"not found"})
+        path=self.path.split("?",1)[0].rstrip("/")
+        if path=="/api/state":
+            try:n=int(self.headers.get("Content-Length","0"))
+            except:n=0
+            if n<=0 or n>MAX_STATE:return self.send_json(413,{"error":"Слишком большой state."})
+            try:body=json.loads(self.rfile.read(n).decode("utf-8"))
+            except Exception:return self.send_json(400,{"error":"Некорректный JSON state."})
+            incoming=body.get("state")
+            if not isinstance(incoming,dict):return self.send_json(400,{"error":"state должен быть объектом."})
+            current=read_sync_state();base=int(body.get("base_rev") or 0)
+            if int(current.get("rev") or 0)!=base:return self.send_json(409,current)
+            saved=write_sync_state(incoming,base)
+            return self.send_json(200,{"ok":True,"rev":saved["rev"],"updated_at":saved["updated_at"]})
+        if path!="/api/materials/analyze":return self.send_json(404,{"error":"not found"})
         try:n=int(self.headers.get("Content-Length","0"))
         except:n=0
         if n<=0 or n>MAX_REQUEST:return self.send_json(413,{"error":"Слишком большой запрос."})
@@ -338,5 +393,5 @@ class Handler(SimpleHTTPRequestHandler):
 
 if __name__=="__main__":
     APP.mkdir(parents=True,exist_ok=True)
-    print(f"Chinese Study 4.6 + MiniMax on http://{HOST}:{PORT}",flush=True)
+    print(f"Chinese Study 4.7 + MiniMax on http://{HOST}:{PORT}",flush=True)
     ThreadingHTTPServer((HOST,PORT),Handler).serve_forever()
