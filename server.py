@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-import base64, json, os, re, subprocess, tempfile, time, urllib.error, urllib.request
+import base64, json, os, re, subprocess, tempfile, threading, time, urllib.error, urllib.request, uuid
 from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
 from pathlib import Path
 
@@ -331,9 +331,10 @@ def vlm_read_image(mime, raw, page_label=""):
     if not text: raise RuntimeError("MiniMax VLM не вернул распознанный текст.")
     return text
 
-def pdf_to_images(raw):
+def pdf_to_images(raw, progress=None):
     if not any((Path(d)/"pdftoppm").is_file() for d in os.environ.get("PATH","").split(":")):
         raise RuntimeError("Для PDF не установлен poppler-utils.")
+    if progress: progress("rendering_pdf")
     pages=[]
     with tempfile.TemporaryDirectory(prefix="chinese-pdf-") as td:
         src=Path(td)/"input.pdf";src.write_bytes(raw);prefix=str(Path(td)/"page")
@@ -365,7 +366,11 @@ def text_analyze(extracted,note=""):
     if missing:raise RuntimeError("В ответе MiniMax не хватает полей: "+", ".join(missing))
     return out
 
-def analyze(payload):
+def analyze(payload, progress=None):
+    def _p(stage, detail=""):
+        if progress:
+            try: progress(stage, detail)
+            except Exception: pass
     if not KEY:raise RuntimeError("На VPS не настроен MINIMAX_API_KEY.")
     note=str(payload.get("text") or "").strip()
     mime=str(payload.get("mime_type") or "").lower().split(";")[0]
@@ -373,26 +378,87 @@ def analyze(payload):
     if not note and not b64:raise ValueError("Добавь текст, фото или PDF.")
     parts=[]
     if b64:
+        _p("received")
         try:raw=base64.b64decode(b64,validate=True)
         except Exception as e:raise ValueError("Не удалось прочитать файл.") from e
         if len(raw)>MAX_FILE:raise ValueError("Файл больше 12 МБ.")
         if mime=="application/pdf":
-            for i,page in enumerate(pdf_to_images(raw),1):
+            pages=pdf_to_images(raw,progress=lambda st,dt="":_p(st,dt))
+            total=len(pages)
+            for i,page in enumerate(pages,1):
+                _p("reading_page",f"{i}/{total}")
                 parts.append(f"--- Страница {i} ---\n"+vlm_read_image("image/jpeg",page,f"страница {i} PDF"))
         elif mime in ("image/jpeg","image/png","image/webp"):
+            _p("reading_image")
             parts.append(vlm_read_image(mime,raw))
         elif mime=="image/gif":
             raise ValueError("GIF не поддерживается MiniMax VLM. Сохрани кадр как JPG/PNG/WebP.")
         elif mime.startswith("text/") or mime in ("application/octet-stream",""):
+            _p("reading_text")
             parts.append(raw.decode("utf-8","replace")[:90000])
         else:
             raise ValueError("Поддерживаются JPG, PNG, WebP, PDF и TXT.")
     extracted="\n\n".join(x for x in parts if x.strip())
     if not extracted:extracted,note=note,""
+    _p("generating")
     return text_analyze(extracted,note)
 
+
+# --- async analyze jobs: a single long request was dropping as "failed to fetch";
+#     now the POST returns a job id at once and the client polls .../analyze/status
+JOBS={}
+JOBS_LOCK=threading.Lock()
+
+def _job_gc():
+    now=time.time()
+    with JOBS_LOCK:
+        for k in [k for k,v in JOBS.items() if v.get("finished") and now-v["finished"]>3600]:
+            JOBS.pop(k,None)
+        if len(JOBS)>60:
+            for k in sorted(JOBS,key=lambda k:JOBS[k].get("started",0))[:len(JOBS)-60]:
+                JOBS.pop(k,None)
+
+def _run_analyze_job(job_id,payload):
+    def progress(stage,detail=""):
+        with JOBS_LOCK:
+            j=JOBS.get(job_id)
+            if j and j["state"]=="running":
+                j["stage"],j["detail"],j["updated"]=stage,detail,time.time()
+    try:
+        result=analyze(payload,progress=progress)
+        with JOBS_LOCK:
+            j=JOBS.get(job_id)
+            if j: j.update(state="done",stage="done",result=result,finished=time.time())
+    except ValueError as e:
+        with JOBS_LOCK:
+            j=JOBS.get(job_id)
+            if j: j.update(state="error",error=str(e),kind="user",finished=time.time())
+    except Exception as e:
+        with JOBS_LOCK:
+            j=JOBS.get(job_id)
+            if j: j.update(state="error",error=str(e),kind="server",finished=time.time())
+
+def start_analyze_job(payload):
+    _job_gc()
+    job_id=uuid.uuid4().hex
+    with JOBS_LOCK:
+        JOBS[job_id]={"state":"running","stage":"queued","detail":"","error":"","result":None,
+                      "started":time.time(),"updated":time.time(),"finished":0}
+    threading.Thread(target=_run_analyze_job,args=(job_id,payload),daemon=True,name=f"analyze-{job_id[:8]}").start()
+    return job_id
+
+def analyze_job_status(job_id):
+    with JOBS_LOCK:
+        j=JOBS.get(job_id)
+        if not j: return {"state":"unknown"}
+        out={"state":j["state"],"stage":j["stage"],"detail":j["detail"],
+             "elapsed_seconds":int(time.time()-j["started"])}
+        if j["state"]=="done": out["result"]=j["result"]
+        if j["state"]=="error": out["error"],out["kind"]=j["error"],j.get("kind","server")
+        return out
+
 class Handler(SimpleHTTPRequestHandler):
-    server_version="ChineseStudy/4.8"
+    server_version="ChineseStudy/4.9"
     def __init__(self,*a,**kw):super().__init__(*a,directory=str(APP),**kw)
     def send_bytes(self,status,body,ctype,cache="no-store"):
         self.send_response(status);self.send_header("Content-Type",ctype);self.send_header("Content-Length",str(len(body)));self.send_header("Cache-Control",cache);self.end_headers();self.wfile.write(body)
@@ -400,11 +466,14 @@ class Handler(SimpleHTTPRequestHandler):
     def do_GET(self):
         path=self.path.split("?",1)[0]
         if path.rstrip("/")=="/api/health":
-            return self.send_json(200,{"ok":True,"version":"4.8","provider":"MiniMax","ai_configured":bool(KEY),"model":MODEL,"vision":"coding_plan/vlm","saved_material_actions":True})
+            return self.send_json(200,{"ok":True,"version":"4.9","provider":"MiniMax","ai_configured":bool(KEY),"model":MODEL,"vision":"coding_plan/vlm","saved_material_actions":True})
         if path.rstrip("/")=="/api/state":
             return self.send_json(200,read_sync_state())
         if path.rstrip("/")=="/api/library":
             return self.send_json(200,read_library())
+        if path.rstrip("/")=="/api/materials/analyze/status":
+            job_id=self.path.split("job=",1)[1].split("&",1)[0] if "job=" in self.path else ""
+            return self.send_json(200,analyze_job_status(job_id))
         if path=="/cloud-sync.js":
             return self.send_bytes(200,CLOUD_SYNC_JS.encode("utf-8"),"application/javascript; charset=utf-8")
         if path=="/topic-study.js":
@@ -443,11 +512,12 @@ class Handler(SimpleHTTPRequestHandler):
         try:n=int(self.headers.get("Content-Length","0"))
         except:n=0
         if n<=0 or n>MAX_REQUEST:return self.send_json(413,{"error":"Слишком большой запрос."})
-        try:return self.send_json(200,analyze(json.loads(self.rfile.read(n).decode("utf-8"))))
-        except ValueError as e:return self.send_json(400,{"error":str(e)})
-        except Exception as e:return self.send_json(502,{"error":str(e)})
+        try:body=json.loads(self.rfile.read(n).decode("utf-8"))
+        except Exception:return self.send_json(400,{"error":"Некорректный JSON запроса."})
+        if not isinstance(body,dict):return self.send_json(400,{"error":"Некорректный запрос."})
+        return self.send_json(202,{"job_id":start_analyze_job(body)})
 
 if __name__=="__main__":
     APP.mkdir(parents=True,exist_ok=True)
-    print(f"Chinese Study 4.8 + MiniMax on http://{HOST}:{PORT}",flush=True)
+    print(f"Chinese Study 4.9 + MiniMax on http://{HOST}:{PORT}",flush=True)
     ThreadingHTTPServer((HOST,PORT),Handler).serve_forever()
