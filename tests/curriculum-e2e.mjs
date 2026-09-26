@@ -84,12 +84,12 @@ try {
   assert.ok(await page.locator('.course-node.done').count() >= 1);
   await page.locator('#courseSettings').click();
   await page.locator('#courseOnboarding [data-level="1"]').click();
-  await page.getByText('Продолжить обучение · HSK 1').waitFor();
+  await page.waitForFunction(() => document.body.textContent.includes('Продолжить обучение · HSK 1'));
   const switched = await page.evaluate(() => JSON.parse(localStorage.getItem('hsk34TrainerV2')));
   assert.equal(switched.curriculum.startLevel, 1);
   assert.ok(switched.curriculum.completed[firstHsk3.id], 'changing HSK must keep progress');
   await page.reload();
-  await page.getByText('Продолжить обучение · HSK 1').waitFor();
+  await page.waitForFunction(() => document.body.textContent.includes('Продолжить обучение · HSK 1'));
   assert.equal(await page.locator('#courseOnboarding').count(), 0);
   await context.close();
 
