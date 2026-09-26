@@ -1,6 +1,6 @@
 {
   "name": "chinese-study-android",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "private": true,
   "scripts": {
     "android:add": "cap add android",

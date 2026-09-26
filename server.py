@@ -28,8 +28,8 @@ RELEASE_ASSETS = {
     "/curriculum/curriculum-v1.json": "curriculum/curriculum-v1.json",
 }
 RELEASE_ASSET_SHA256 = {
-    "curriculum-app.js": "2cfd201839f9d04691d2511897f49b5b8bf9aee3a37957f0d46d305feb53156d",
-    "curriculum/curriculum-v1.json": "ba1b707fb436c2f056800214956eba3079fb52f2624031f187078e1464ee5a30",
+    "curriculum-app.js": "062dd5927c27c7e9b15896cb99637b86e660ee689c2312de1d31b735c495f806",
+    "curriculum/curriculum-v1.json": "ddded387bd54b9b02719df27228a822862be289a6d7cd69eb3e542824c1f0bdc",
 }
 
 SYSTEM_PROMPT = """Ты методист по китайскому для русскоязычного ученика HSK 1–4.
@@ -516,7 +516,7 @@ def analyze_job_status(job_id):
         return out
 
 def ensure_release_asset(request_path):
-    """Backwards-compatible bootstrap for VPSes with the pre-6.0 updater."""
+    """Backwards-compatible bootstrap for VPSes with the pre-6.1 updater."""
     relative = RELEASE_ASSETS.get(request_path)
     if not relative:
         return None
@@ -526,7 +526,7 @@ def ensure_release_asset(request_path):
     if APP not in target.parents:
         return None
     url = f"{RELEASE_ASSET_BASE}/{relative}"
-    request = urllib.request.Request(url, headers={"User-Agent": "ChineseStudy/6.0"})
+    request = urllib.request.Request(url, headers={"User-Agent": "ChineseStudy/6.1"})
     try:
         with urllib.request.urlopen(request, timeout=20) as response:
             body = response.read(4 * 1024 * 1024)
@@ -538,7 +538,7 @@ def ensure_release_asset(request_path):
                 raise ValueError("invalid curriculum client")
         else:
             data = json.loads(body.decode("utf-8"))
-            if data.get("version") != "1.0.0" or len(data.get("levels", [])) != 4:
+            if data.get("version") != "1.1.0" or data.get("exercise_version") != 2 or len(data.get("levels", [])) != 4:
                 raise ValueError("invalid curriculum data")
         target.parent.mkdir(parents=True, exist_ok=True)
         with tempfile.NamedTemporaryFile("wb", dir=target.parent, delete=False) as tmp:
@@ -552,7 +552,7 @@ def ensure_release_asset(request_path):
 
 
 class Handler(SimpleHTTPRequestHandler):
-    server_version="ChineseStudy/6.0"
+    server_version="ChineseStudy/6.1"
     def __init__(self,*a,**kw):super().__init__(*a,directory=str(APP),**kw)
     def send_bytes(self,status,body,ctype,cache="no-store"):
         self.send_response(status);self.send_header("Content-Type",ctype);self.send_header("Content-Length",str(len(body)));self.send_header("Cache-Control",cache);self.end_headers();self.wfile.write(body)
@@ -560,7 +560,7 @@ class Handler(SimpleHTTPRequestHandler):
     def do_GET(self):
         path=self.path.split("?",1)[0]
         if path.rstrip("/")=="/api/health":
-            return self.send_json(200,{"ok":True,"version":"6.0","provider":"MiniMax","ai_configured":bool(KEY),"model":MODEL,"vision":"coding_plan/vlm","saved_material_actions":True,"curriculum":"1.0.0"})
+            return self.send_json(200,{"ok":True,"version":"6.1","provider":"MiniMax","ai_configured":bool(KEY),"model":MODEL,"vision":"coding_plan/vlm","saved_material_actions":True,"curriculum":"1.1.0"})
         if path.rstrip("/")=="/api/state":
             return self.send_json(200,read_sync_state())
         if path.rstrip("/")=="/api/library":
@@ -586,7 +586,7 @@ class Handler(SimpleHTTPRequestHandler):
                 html=re.sub(r'<script src="ai-import\.js\?v=[^"]+"></script>\s*',"",html)
                 html=re.sub(r'<script src="cloud-sync\.js\?v=[^"]+"></script>\s*',"",html)
                 html=re.sub(r'<script src="curriculum-app\.js\?v=[^"]+"></script>\s*',"",html)
-                html=html.replace("</body>",'<script src="topic-study.js?v=6.0"></script>\n<script src="ai-import.js?v=6.0"></script>\n<script src="curriculum-app.js?v=6.0"></script>\n<script src="cloud-sync.js?v=6.0"></script>\n</body>')
+                html=html.replace("</body>",'<script src="topic-study.js?v=6.1"></script>\n<script src="ai-import.js?v=6.1"></script>\n<script src="curriculum-app.js?v=6.1"></script>\n<script src="cloud-sync.js?v=6.1"></script>\n</body>')
                 return self.send_bytes(200,html.encode("utf-8"),"text/html; charset=utf-8","no-cache")
         return super().do_GET()
     def do_POST(self):
@@ -622,5 +622,5 @@ class Handler(SimpleHTTPRequestHandler):
 
 if __name__=="__main__":
     APP.mkdir(parents=True,exist_ok=True)
-    print(f"Chinese Study 6.0 + Curriculum 1.0 + MiniMax on http://{HOST}:{PORT}",flush=True)
+    print(f"Chinese Study 6.1 + Curriculum 1.1 + MiniMax on http://{HOST}:{PORT}",flush=True)
     ThreadingHTTPServer((HOST,PORT),Handler).serve_forever()

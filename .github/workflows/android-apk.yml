@@ -100,5 +100,5 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          TAG="android-v0.3.${GITHUB_RUN_NUMBER}"
-          gh release create "$TAG" dist/ChineseStudy.apk             --target "$GITHUB_SHA"             --title "Китайский Android 0.3.${GITHUB_RUN_NUMBER}"             --notes "Android 0.3: Curriculum 1.0 для HSK 1–4, выбор стартового уровня, дорожка курса, синхронизация прогресса и интервальные повторения. Камера и загрузка нескольких материалов сохранены; ключ MiniMax остаётся только на сервере."
+          TAG="android-v0.4.${GITHUB_RUN_NUMBER}"
+          gh release create "$TAG" dist/ChineseStudy.apk             --target "$GITHUB_SHA"             --title "Китайский Android 0.4.${GITHUB_RUN_NUMBER}"             --notes "Android 0.4: Curriculum 1.1 с естественными контекстами, шестью навыками, точечным повтором ошибок и адаптивной SRS-оценкой. Камера, загрузка нескольких материалов и весь прежний прогресс сохранены; ключ MiniMax остаётся только на сервере."

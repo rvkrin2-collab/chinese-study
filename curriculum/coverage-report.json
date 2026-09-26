@@ -9,7 +9,9 @@
     "lexical_lessons": 149,
     "review_lessons": 20,
     "words": 1200,
-    "grammar_constructions": 149
+    "grammar_constructions": 149,
+    "natural_contexts": 447,
+    "distinct_contexts": 399
   },
   "coverage": {
     "1": {

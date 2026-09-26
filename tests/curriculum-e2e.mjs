@@ -13,6 +13,7 @@ const baseURL = process.env.CHINESE_STUDY_TEST_URL || 'http://127.0.0.1:18910/';
 const data = JSON.parse(fs.readFileSync(new URL('../curriculum/curriculum-v1.json', import.meta.url), 'utf8'));
 const firstHsk3 = data.levels.find(x => x.hsk_level === 3).units[0].lessons[0];
 const firstWord = firstHsk3.vocabulary[0];
+const firstContextWord = firstHsk3.vocabulary.find(word => word.id === firstHsk3.contexts[0].focus_word_id);
 const browser = await chromium.launch({ headless: true });
 
 async function finishVisibleStep(page) {
@@ -30,8 +31,10 @@ async function finishVisibleStep(page) {
   }
   const options = page.locator('.course-option:not([disabled])');
   if (await options.count()) { await options.first().click(); return true; }
+  const self = page.locator('[data-self]:not([disabled])');
+  if (await self.count()) { await self.first().click(); return true; }
   const reveal = page.locator('#courseReveal');
-  if (await reveal.count()) { await input.fill('我学习中文。'); await reveal.click(); return true; }
+  if (await reveal.count() && await reveal.isEnabled()) { await input.fill('我学习中文。'); await reveal.click(); return true; }
   throw new Error('Unknown lesson step: ' + (await page.locator('#courseContent').innerText()));
 }
 
@@ -50,22 +53,23 @@ try {
   await page.locator('#courseNext').click();
 
   // Deliberately choose a wrong answer and verify non-blocking feedback with pinyin.
-  const wrong = page.locator('.course-option').filter({ hasNotText: firstWord.translation_ru }).first();
+  const wrong = page.locator('.course-option').filter({ hasNotText: firstContextWord.hanzi }).first();
   await wrong.click();
   const feedback = page.locator('#courseFeedback');
   assert.match(await feedback.innerText(), /Ошибка/);
-  assert.ok((await feedback.innerText()).includes(firstWord.pinyin), 'wrong-answer feedback must include pinyin');
+  assert.ok((await feedback.innerText()).includes(firstContextWord.pinyin), 'wrong-answer feedback must include pinyin');
   assert.equal(await page.locator('#courseNext').count(), 1, 'wrong answer must allow continuing');
   await page.locator('#courseNext').click();
 
   for (let i = 0; i < 40 && !(await page.locator('.course-summary').count()); i++) await finishVisibleStep(page);
   await page.locator('.course-summary').waitFor();
-  assert.match(await page.locator('.course-summary').innerText(), /добавлены в интервальное повторение/);
+  assert.match(await page.locator('.course-summary').innerText(), /На повторение поставлены|по расписанию/);
   const stateAfterLesson = await page.evaluate(() => JSON.parse(localStorage.getItem('hsk34TrainerV2')));
   assert.ok(stateAfterLesson.curriculum.completed[firstHsk3.id]);
   assert.notEqual(stateAfterLesson.curriculum.currentByLevel['3'], firstHsk3.id);
   assert.ok(Object.keys(stateAfterLesson.words || {}).some(id => id.startsWith('h3-w')));
   assert.ok(stateAfterLesson.curriculum.grammarSrs[firstHsk3.grammar.id]);
+  assert.ok(stateAfterLesson.curriculum.lessonResults[firstHsk3.id].skills.listening);
 
   // Personal material comparison marks known/upcoming/new and words-only mode
   // selects only genuinely new vocabulary without altering Curriculum.

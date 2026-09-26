@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Build the immutable Chinese Study Curriculum 1.0 dataset.
+"""Build the immutable Chinese Study Curriculum 1.1 dataset.
 
 The runtime never calls an LLM to decide what comes next.  This builder is a
 release tool: it combines the HSK 2.0 1-4 canonical lexicon with the lesson
-ordering from HSK Standard Course and writes a deterministic JSON artifact.
+ordering from HSK Standard Course, then attaches pinned natural contexts and
+writes a deterministic JSON artifact.
 """
 from __future__ import annotations
 
@@ -398,7 +399,7 @@ def build(args: argparse.Namespace) -> dict:
             level_obj["units"].append(unit)
         levels.append(level_obj)
     return {
-        "version": "1.0.0", "schema_version": 1,
+        "version": "1.1.0", "schema_version": 1,
         "standard": "HSK 2.0 levels 1-4; lesson sequencing follows HSK Standard Course 1-4",
         "generated_by": "deterministic release builder; no runtime AI sequencing",
         "levels": levels,
@@ -409,9 +410,14 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--lexicon", required=True)
     parser.add_argument("--course-csv-dir", required=True)
+    parser.add_argument("--sentences", required=True, help="no7z/hsk-sentences-audio dist/sentences.json")
+    parser.add_argument("--sentence-source-commit", default="857dfbab91027ebd97df01260e91b817cb6b4854")
     parser.add_argument("--output", default="curriculum/curriculum-v1.json")
     args = parser.parse_args()
     data = build(args)
+    from enrich_contexts import enrich
+    sentences = json.loads(Path(args.sentences).read_text(encoding="utf-8"))
+    data = enrich(data, sentences, args.sentence_source_commit)
     Path(args.output).write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 

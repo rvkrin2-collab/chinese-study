@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Strict validator and coverage report for Curriculum 1.0."""
+"""Strict validator and coverage report for Curriculum 1.1."""
 from __future__ import annotations
 
 import argparse
@@ -13,6 +13,7 @@ REQUIRED_LESSON = {
     "id", "type", "hsk_level", "unit", "number", "title", "objective",
     "estimated_minutes", "vocabulary", "grammar_prerequisites",
     "review_grammar_ids", "examples", "dialogue", "exercises", "srs_items",
+    "exercise_version",
 }
 REQUIRED_EXERCISES = {
     "listening", "comprehension", "reading", "choice", "word_order",
@@ -36,6 +37,11 @@ def flatten(data: dict) -> tuple[list[dict], list[dict], list[dict]]:
 def validate(data: dict) -> dict:
     errors, warnings = [], []
     units, lessons, words = flatten(data)
+    if data.get("version") != "1.1.0" or data.get("exercise_version") != 2:
+        errors.append("Ожидается Curriculum 1.1.0 с exercise_version=2")
+    context_source = data.get("context_source", {})
+    if context_source.get("license") != "CC-BY-SA-4.0" or not context_source.get("commit"):
+        errors.append("Нет закреплённого источника и лицензии естественных контекстов")
     ids = [x.get("id") for x in [*data.get("levels", []), *units, *lessons, *words]]
     duplicates = [x for x, n in Counter(ids).items() if x and n > 1]
     if duplicates:
@@ -83,6 +89,30 @@ def validate(data: dict) -> dict:
                     errors.append(f"{lesson.get('id')}/{family}: одинаковые варианты")
                 if options and item.get("answer") not in options:
                     errors.append(f"{lesson.get('id')}/{family}: ответ отсутствует среди вариантов")
+        contexts = lesson.get("contexts", [])
+        if lesson.get("type") == "lesson" and len(contexts) != 3:
+            errors.append(f"{lesson.get('id')}: нужно ровно 3 естественных контекста")
+        vocab_ids = {word.get("id") for word in lesson.get("vocabulary", [])}
+        for context in contexts:
+            missing_context = [field for field in (
+                "source_sentence_id", "chinese", "pinyin", "tokens", "focus_word_id",
+                "focus_hanzi", "focus_pinyin", "focus_translation_ru",
+            ) if not context.get(field)]
+            if missing_context:
+                errors.append(f"{lesson.get('id')}: в контексте нет {', '.join(missing_context)}")
+                continue
+            if context["focus_word_id"] not in vocab_ids:
+                errors.append(f"{lesson.get('id')}: контекст проверяет слово не из урока")
+            if context["focus_hanzi"] not in context["chinese"]:
+                errors.append(f"{lesson.get('id')}: фокусное слово отсутствует в контексте")
+            normalized_text = re.sub(r"[\s，。！？、,.!?“”\"'’]", "", context["chinese"])
+            normalized_tokens = re.sub(r"[\s，。！？、,.!?“”\"'’]", "", "".join(context["tokens"]))
+            if normalized_tokens != normalized_text:
+                errors.append(f"{lesson.get('id')}: токены не восстанавливают исходную фразу")
+            if any(key in context for key in ("english", "translation_en", "audio")):
+                errors.append(f"{lesson.get('id')}: скопированы лишние поля исходного набора")
+            if "今天我们学习" in context["chinese"] or "今天学什么" in context["chinese"]:
+                errors.append(f"{lesson.get('id')}: найден служебный шаблон вместо контекста")
 
     for level, numbers in seen_numbers.items():
         if numbers != list(range(1, len(numbers) + 1)):
@@ -142,6 +172,11 @@ def validate(data: dict) -> dict:
             "lexical_lessons": sum(x.get("type") == "lesson" for x in lessons),
             "review_lessons": sum(x.get("type") == "review" for x in lessons),
             "words": len(words), "grammar_constructions": len(grammar_items),
+            "natural_contexts": sum(len(x.get("contexts", [])) for x in lessons),
+            "distinct_contexts": len({
+                c.get("source_sentence_id") for x in lessons for c in x.get("contexts", [])
+                if c.get("source_sentence_id")
+            }),
         },
         "coverage": coverage,
     }
@@ -154,10 +189,11 @@ def markdown(report: dict) -> str:
         rows.append(f"| HSK {level} | {item['units']} | {item['lessons']} | {item['review_lessons']} | {item['covered_words']} / {item['target_words']} | {item['word_coverage_percent']}% | {item['grammar_constructions']} |")
     status = "ПРОЙДЕН" if report["ok"] else "НЕ ПРОЙДЕН"
     return "\n".join([
-        "# Отчёт покрытия Curriculum 1.0", "", f"**Валидатор: {status}.**", "",
+        "# Отчёт покрытия Curriculum 1.1", "", f"**Валидатор: {status}.**", "",
         f"Всего: {s['levels']} уровня, {s['units']} разделов, {s['lessons']} уроков "
         f"({s['lexical_lessons']} учебных + {s['review_lessons']} контрольных), "
-        f"{s['words']} слов, {s['grammar_constructions']} грамматических конструкций.", "", *rows, "",
+        f"{s['words']} слов, {s['grammar_constructions']} грамматических конструкций, "
+        f"{s['natural_contexts']} контекстов ({s['distinct_contexts']} различных фраз).", "", *rows, "",
         f"Ошибок: {len(report['errors'])}. Предупреждений: {len(report['warnings'])}.", "",
         *(f"- {x}" for x in report["errors"]),
     ]) + "\n"

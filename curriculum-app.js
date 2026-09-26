@@ -1,6 +1,6 @@
 (() => {
   'use strict';
-  const CURRICULUM_URL = 'curriculum/curriculum-v1.json?v=1.0.0';
+  const CURRICULUM_URL = 'curriculum/curriculum-v1.json?v=1.1.0';
   const DAY = 86400000;
   let curriculum = null;
   let levels = [];
@@ -11,10 +11,10 @@
   let active = null;
   let activeSteps = [];
   let activePos = 0;
-  let activeStats = { correct: 0, total: 0 };
+  let activeStats = { correct: 0, total: 0, skills: {}, wordAttempts: {}, grammarAttempts: {}, retryKeys: new Set() };
 
   const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-  const norm = value => String(value ?? '').replace(/[\s，。！？,.!?“”"'’]/g, '').toLowerCase();
+  const norm = value => String(value ?? '').replace(/[\s，。！？、,.!?“”"'’]/g, '').toLowerCase();
   const shuffled = items => [...items].sort(() => Math.random() - .5);
   const unique = items => [...new Set(items.filter(Boolean))];
   const nowMs = () => Date.now();
@@ -97,7 +97,7 @@
   function injectStyles() {
     const style = document.createElement('style');
     style.textContent = `
-      .course-home{display:grid;grid-template-columns:1fr auto;gap:20px;align-items:center}.course-home h2{margin:6px 0 8px}.course-kicker{color:var(--accent,#98622f);font-weight:850}.course-actions{display:flex;gap:9px;flex-wrap:wrap;margin-top:16px}.course-review{min-width:190px;text-align:center;border-left:1px solid var(--line,#ddd);padding-left:20px}.course-review b{display:block;font:700 34px Georgia,serif}.course-review small{display:block;color:var(--muted,#777);margin:4px 0 11px}.course-meta{display:flex;gap:8px;flex-wrap:wrap}.course-meta span{padding:5px 9px;border-radius:999px;background:var(--paper2,#f5f2eb);font-size:12px;font-weight:750}.course-level-tabs{display:flex;gap:8px;flex-wrap:wrap;margin:16px 0}.course-level-tabs button{border:1px solid var(--line,#ddd);background:var(--paper,#fff);padding:9px 14px;border-radius:999px;font-weight:800;cursor:pointer}.course-level-tabs button.active{background:var(--ink,#24312c);color:white;border-color:var(--ink,#24312c)}.course-unit{margin:18px 0}.course-unit h3{margin:0 0 10px}.course-road{display:grid;gap:8px}.course-node{width:100%;display:grid;grid-template-columns:38px 1fr auto;gap:12px;align-items:center;text-align:left;border:1px solid var(--line,#ddd);border-radius:13px;background:var(--paper,#fff);padding:11px 13px;cursor:pointer}.course-node:hover{transform:translateY(-1px)}.course-node .dot{width:34px;height:34px;border-radius:50%;display:grid;place-items:center;background:#ece8df;font-weight:900}.course-node.done .dot{background:#dcece2;color:#28503e}.course-node.current{border:2px solid var(--accent,#a8743d);box-shadow:0 4px 18px #0000000d}.course-node.current .dot{background:var(--accent,#a8743d);color:white}.course-node.review .dot{border-radius:10px}.course-node small{color:var(--muted,#777)}.course-settings{float:right}.course-modal{position:fixed;inset:0;display:none;z-index:11000;background:#0009;padding:3vh 14px;overflow:auto}.course-modal.open{display:flex;align-items:flex-start;justify-content:center}.course-dialog{position:relative;width:min(820px,100%);background:var(--paper,#fff);border-radius:20px;padding:24px;box-shadow:0 28px 80px #0007}.course-close{position:absolute;right:15px;top:12px;border:0;background:transparent;font-size:28px;cursor:pointer}.course-progress{height:7px;background:var(--line,#ddd);border-radius:99px;overflow:hidden;margin:12px 0 20px}.course-progress i{display:block;height:100%;background:var(--accent,#a8743d);transition:width .25s}.course-wordgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:9px}.course-word{padding:11px;border:1px solid var(--line,#ddd);border-radius:11px}.course-word b{font:700 24px Georgia,serif}.course-word span,.course-word small{display:block}.course-word small{color:var(--accent,#98622f);font-weight:750}.course-options{display:grid;gap:8px;margin:16px 0}.course-option{border:1px solid var(--line,#ddd);background:var(--paper2,#faf9f5);padding:12px;border-radius:11px;text-align:left;font-size:16px;cursor:pointer}.course-option.correct{border-color:#47835d;background:#e8f4ec}.course-option.wrong{border-color:#b94a3c;background:#fff0ed}.course-feedback{padding:13px;border-radius:11px;margin-top:14px}.course-feedback.ok{background:#e8f4ec}.course-feedback.bad{background:#fff0ed}.course-pinyin{color:var(--accent,#98622f);font-weight:750}.course-next{margin-top:14px;padding:12px 18px;border:0;border-radius:11px;background:var(--ink,#25322d);color:white;font-weight:850;cursor:pointer}.course-input{width:100%;padding:12px;border:1px solid var(--line,#ddd);border-radius:11px;font-size:18px;margin:12px 0}.course-dialogue{white-space:pre-line;font:21px/1.75 Georgia,serif}.course-onboarding{position:fixed;inset:0;z-index:12000;background:linear-gradient(145deg,#1f2e29,#344b41);display:flex;align-items:center;justify-content:center;padding:20px}.course-onboarding-box{width:min(680px,100%);background:#fff;border-radius:22px;padding:28px}.course-level-choice{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-top:18px}.course-level-choice button{padding:20px;border:1px solid #ddd;border-radius:14px;background:#faf8f3;text-align:left;cursor:pointer}.course-level-choice b{display:block;font-size:22px}.course-level-choice small{color:#6f756f}.course-summary{text-align:center;padding:16px}.course-summary .seal{width:72px;height:72px;border-radius:50%;display:grid;place-items:center;background:#e5eee8;margin:auto;font:700 38px Georgia,serif}.course-answer-actions{display:flex;gap:8px;flex-wrap:wrap}.course-audio{padding:12px 16px;border:0;border-radius:999px;background:#f0e8d8;font-weight:800;cursor:pointer}@media(max-width:700px){.course-home{grid-template-columns:1fr}.course-review{border:0;border-top:1px solid var(--line,#ddd);padding:15px 0 0}.course-level-choice{grid-template-columns:1fr}.course-dialog{padding:20px 16px}.course-node{grid-template-columns:34px 1fr}.course-node>small{display:none}}
+      .course-home{display:grid;grid-template-columns:1fr auto;gap:20px;align-items:center}.course-home h2{margin:6px 0 8px}.course-kicker{color:var(--accent,#98622f);font-weight:850}.course-actions{display:flex;gap:9px;flex-wrap:wrap;margin-top:16px}.course-review{min-width:190px;text-align:center;border-left:1px solid var(--line,#ddd);padding-left:20px}.course-review b{display:block;font:700 34px Georgia,serif}.course-review small{display:block;color:var(--muted,#777);margin:4px 0 11px}.course-meta{display:flex;gap:8px;flex-wrap:wrap}.course-meta span{padding:5px 9px;border-radius:999px;background:var(--paper2,#f5f2eb);font-size:12px;font-weight:750}.course-level-tabs{display:flex;gap:8px;flex-wrap:wrap;margin:16px 0}.course-level-tabs button{border:1px solid var(--line,#ddd);background:var(--paper,#fff);padding:9px 14px;border-radius:999px;font-weight:800;cursor:pointer}.course-level-tabs button.active{background:var(--ink,#24312c);color:white;border-color:var(--ink,#24312c)}.course-unit{margin:18px 0}.course-unit h3{margin:0 0 10px}.course-road{display:grid;gap:8px}.course-node{width:100%;display:grid;grid-template-columns:38px 1fr auto;gap:12px;align-items:center;text-align:left;border:1px solid var(--line,#ddd);border-radius:13px;background:var(--paper,#fff);padding:11px 13px;cursor:pointer}.course-node:hover{transform:translateY(-1px)}.course-node .dot{width:34px;height:34px;border-radius:50%;display:grid;place-items:center;background:#ece8df;font-weight:900}.course-node.done .dot{background:#dcece2;color:#28503e}.course-node.current{border:2px solid var(--accent,#a8743d);box-shadow:0 4px 18px #0000000d}.course-node.current .dot{background:var(--accent,#a8743d);color:white}.course-node.review .dot{border-radius:10px}.course-node small{color:var(--muted,#777)}.course-settings{float:right}.course-modal{position:fixed;inset:0;display:none;z-index:11000;background:#0009;padding:3vh 14px;overflow:auto}.course-modal.open{display:flex;align-items:flex-start;justify-content:center}.course-dialog{position:relative;width:min(820px,100%);background:var(--paper,#fff);border-radius:20px;padding:24px;box-shadow:0 28px 80px #0007}.course-close{position:absolute;right:15px;top:12px;border:0;background:transparent;font-size:28px;cursor:pointer}.course-progress{height:7px;background:var(--line,#ddd);border-radius:99px;overflow:hidden;margin:12px 0 20px}.course-progress i{display:block;height:100%;background:var(--accent,#a8743d);transition:width .25s}.course-wordgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:9px}.course-word{padding:11px;border:1px solid var(--line,#ddd);border-radius:11px}.course-word b{font:700 24px Georgia,serif}.course-word span,.course-word small{display:block}.course-word small{color:var(--accent,#98622f);font-weight:750}.course-options{display:grid;gap:8px;margin:16px 0}.course-option{border:1px solid var(--line,#ddd);background:var(--paper2,#faf9f5);padding:13px;border-radius:11px;text-align:left;font-size:18px;cursor:pointer}.course-option.correct{border-color:#47835d;background:#e8f4ec}.course-option.wrong{border-color:#b94a3c;background:#fff0ed}.course-feedback{padding:13px;border-radius:11px;margin-top:14px;font-size:16px;line-height:1.55}.course-feedback.ok{background:#e8f4ec}.course-feedback.bad{background:#fff0ed}.course-pinyin{color:var(--accent,#98622f);font-weight:750}.course-next{margin-top:14px;padding:12px 18px;border:0;border-radius:11px;background:var(--ink,#25322d);color:white;font-weight:850;cursor:pointer}.course-input{width:100%;padding:12px;border:1px solid var(--line,#ddd);border-radius:11px;font-size:20px;margin:12px 0}.course-dialogue{white-space:pre-line;font:23px/1.75 Georgia,serif}.course-context{font:700 28px/1.65 Georgia,serif;padding:15px 0}.course-context .focus{color:var(--accent,#98622f);border-bottom:3px solid currentColor}.course-hint{padding:10px 12px;border-left:3px solid var(--accent,#98622f);background:var(--paper2,#faf9f5);margin:12px 0}.course-skill{display:inline-block;padding:4px 8px;border-radius:999px;background:var(--paper2,#f5f2eb);font-size:12px;font-weight:850;letter-spacing:.03em}.course-self-options{display:grid;gap:8px;margin-top:12px}.course-self-option{border:1px solid var(--line,#ddd);background:var(--paper,#fff);padding:12px;border-radius:10px;text-align:left;font-weight:800;cursor:pointer}.course-onboarding{position:fixed;inset:0;z-index:12000;background:linear-gradient(145deg,#1f2e29,#344b41);display:flex;align-items:center;justify-content:center;padding:20px}.course-onboarding-box{width:min(680px,100%);background:#fff;border-radius:22px;padding:28px}.course-level-choice{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-top:18px}.course-level-choice button{padding:20px;border:1px solid #ddd;border-radius:14px;background:#faf8f3;text-align:left;cursor:pointer}.course-level-choice b{display:block;font-size:22px}.course-level-choice small{color:#6f756f}.course-summary{text-align:center;padding:16px}.course-summary .seal{width:72px;height:72px;border-radius:50%;display:grid;place-items:center;background:#e5eee8;margin:auto;font:700 38px Georgia,serif}.course-answer-actions{display:flex;gap:8px;flex-wrap:wrap}.course-audio{padding:12px 16px;border:0;border-radius:999px;background:#f0e8d8;font-weight:800;cursor:pointer}@media(max-width:700px){.course-home{grid-template-columns:1fr}.course-review{border:0;border-top:1px solid var(--line,#ddd);padding:15px 0 0}.course-level-choice{grid-template-columns:1fr}.course-dialog{padding:20px 16px}.course-node{grid-template-columns:34px 1fr}.course-node>small{display:none}.course-context{font-size:24px}}
     `;
     document.head.appendChild(style);
   }
@@ -186,7 +186,7 @@
     persistCourse();
     active = lesson;
     activeSteps = lesson.type === 'review' ? buildCheckpointSteps(lesson) : buildLessonSteps(lesson);
-    activePos = 0; activeStats = { correct: 0, total: 0 };
+    activePos = 0; activeStats = { correct: 0, total: 0, skills: {}, wordAttempts: {}, grammarAttempts: {}, retryKeys: new Set() };
     makeModal();
     document.getElementById('courseModal').classList.add('open');
     try { history.pushState({ courseLesson: id }, ''); } catch (_) {}
@@ -204,8 +204,40 @@
     return shuffled(unique([word[field], ...shuffled(same).slice(0, 3).map(x => x[field])])).slice(0, 4);
   }
 
+  function lessonWordOptions(word, field = 'translation_ru') {
+    const local = (active?.vocabulary || []).filter(x => x.id !== word.id && x[field] && x[field] !== word[field]);
+    const sameLevel = lessons.filter(x => x.hsk_level === active?.hsk_level).flatMap(x => x.vocabulary || [])
+      .filter(x => x.id !== word.id && x[field] && x[field] !== word[field]);
+    return shuffled(unique([word[field], ...shuffled(local).map(x => x[field]), ...shuffled(sameLevel).map(x => x[field])])).slice(0, 4);
+  }
+
+  function contextWord(context) { return wordById.get(String(context?.focus_word_id)); }
+  function contextForWord(word) {
+    for (const lesson of lessons) {
+      const found = (lesson.contexts || []).find(context => String(context.focus_word_id) === String(word.id));
+      if (found) return found;
+    }
+    return null;
+  }
+
   function buildLessonSteps(lesson) {
     const words = lesson.vocabulary || [];
+    const contexts = lesson.contexts || [];
+    if (contexts.length >= 3) {
+      const [first, second, third] = contexts;
+      return [
+        { type: 'intro', words },
+        { type: 'ru-hanzi', word: contextWord(first), skill: 'recognition' },
+        { type: 'context-listening', context: first, word: contextWord(first), skill: 'listening' },
+        { type: 'grammar', grammar: lesson.grammar },
+        { type: 'grammar-use', grammar: lesson.grammar, skill: 'grammar' },
+        { type: 'context-reading', context: second, word: contextWord(second), skill: 'reading' },
+        { type: 'context-order', context: third, word: contextWord(third), skill: 'word_order' },
+        { type: 'context-cloze', context: second, word: contextWord(second), skill: 'fill_blank' },
+        { type: 'context-translation', context: third, word: contextWord(third), skill: 'translation' },
+        { type: 'context-active', context: first, word: contextWord(first), skill: 'active_speech' },
+      ].filter(step => !Object.values(step).some(value => value === undefined));
+    }
     const ex = lesson.exercises || {};
     return [
       { type: 'intro', words },
@@ -226,6 +258,19 @@
     const source = (lesson.review_lesson_ids || []).flatMap(id => lessonById.get(id)?.vocabulary || []);
     const words = shuffled(source).slice(0, 8);
     const grammars = shuffled((lesson.review_grammar_ids || []).map(id => grammarById.get(id)).filter(Boolean)).slice(0, 4);
+    const contexts = shuffled((lesson.review_lesson_ids || []).flatMap(id => lessonById.get(id)?.contexts || []));
+    if (contexts.length >= 3) {
+      const [first, second, third] = contexts;
+      const word = contextWord(first) || words[0];
+      return [
+        { type: 'context-listening', context: first, word, skill: 'listening', review: true },
+        { type: 'ru-hanzi', word: contextWord(second) || words[1] || word, skill: 'recognition', review: true },
+        { type: 'grammar-review', grammar: grammars[0], skill: 'grammar', review: true },
+        { type: 'context-reading', context: second, word: contextWord(second), skill: 'reading', review: true },
+        { type: 'context-order', context: third, word: contextWord(third), skill: 'word_order', review: true },
+        { type: 'context-active', context: first, word, skill: 'active_speech', review: true },
+      ].filter(step => !('word' in step) || step.word).filter(step => !('grammar' in step) || step.grammar);
+    }
     return [
       ...words.map((word, index) => ({ type: index % 3 === 0 ? 'listening-word' : index % 2 ? 'ru-hanzi' : 'hanzi-ru', word, review: true })),
       ...grammars.map(grammar => ({ type: 'grammar-review', grammar })),
@@ -247,13 +292,44 @@
       examples: renderExamples, dialogue: renderDialogue, choice: renderChoice,
       'word-order': renderWordOrder, fill: renderFill, translation: renderTranslation,
       active: renderActive, 'grammar-review': renderGrammarReview,
+      'context-listening': renderContextListening, 'context-reading': renderContextReading,
+      'context-order': renderContextOrder, 'context-cloze': renderContextCloze,
+      'context-translation': renderContextTranslation, 'context-active': renderContextActive,
+      'grammar-use': renderGrammarUse,
     };
     (renderers[step.type] || renderUnsupported)(content, step);
   }
 
   function nextButton(label = 'Дальше') { return `<button class="course-next" id="courseNext">${label}</button>`; }
   function wireNext() { const b = document.getElementById('courseNext'); if (b) b.onclick = () => { activePos++; renderStep(); }; }
-  function markResult(ok) { activeStats.total++; if (ok) activeStats.correct++; }
+  function markResult(ok, skill = 'general', word = null, grammarId = null) {
+    activeStats.total++; if (ok) activeStats.correct++;
+    const bucket = activeStats.skills[skill] || { correct: 0, total: 0 };
+    bucket.total++; if (ok) bucket.correct++; activeStats.skills[skill] = bucket;
+    if (word) {
+      const item = activeStats.wordAttempts[word.id] || { correct: 0, total: 0 };
+      item.total++; if (ok) item.correct++; activeStats.wordAttempts[word.id] = item;
+    }
+    if (grammarId) {
+      const item = activeStats.grammarAttempts[grammarId] || { correct: 0, total: 0 };
+      item.total++; if (ok) item.correct++; activeStats.grammarAttempts[grammarId] = item;
+    }
+  }
+
+  function queueRetry(step) {
+    if (step.retry) return;
+    const key = `${step.type}:${step.word?.id || step.grammar?.id || step.context?.source_sentence_id || activePos}`;
+    if (activeStats.retryKeys.has(key)) return;
+    activeStats.retryKeys.add(key);
+    activeSteps.splice(Math.min(activeSteps.length, activePos + 3), 0, { ...step, retry: true });
+  }
+
+  function recordStepResult(step, ok) {
+    markResult(ok, step.skill || step.type, step.word || null, step.grammar?.id || null);
+    if (step.review && step.word) gradeRuntimeWord(step.word, ok);
+    if (step.review && step.grammar) gradeGrammar(step.grammar.id, ok);
+    if (!ok) queueRetry(step);
+  }
 
   function renderIntro(content, step) {
     content.innerHTML = `<h2>Новая лексика</h2><p>Сначала познакомьтесь со словами. Нажмите на китайское слово, чтобы услышать его.</p><div class="course-wordgrid">${step.words.map(word => `<button class="course-word" data-say="${esc(word.hanzi)}"><b>${esc(word.hanzi)}</b><small>${esc(word.pinyin)}</small><span>${esc(word.translation_ru)}</span></button>`).join('')}</div>${nextButton('Начать упражнения')}`;
@@ -261,21 +337,19 @@
   }
 
   function renderHanziRu(content, step) {
-    const options = wordOptions(step.word);
-    renderOptions(content, `<div class="tiny">中文 → русский</div><h2>${esc(step.word.hanzi)}</h2><div class="course-pinyin">${esc(step.word.pinyin)}</div>`, options, step.word.translation_ru, step.word);
-    if (step.review) content.querySelectorAll('.course-option').forEach(button => button.addEventListener('click', () => gradeRuntimeWord(step.word, button.dataset.value === step.word.translation_ru), { once: true }));
+    const options = lessonWordOptions(step.word);
+    renderOptions(content, `<div class="course-skill">Узнавание</div><h2>${esc(step.word.hanzi)}</h2><div class="course-pinyin">${esc(step.word.pinyin)}</div>`, options, step.word.translation_ru, step.word, '', step);
   }
 
   function renderRuHanzi(content, step) {
-    const options = wordOptions(step.word, 'hanzi');
-    renderOptions(content, `<div class="tiny">Русский → 中文</div><h2>${esc(step.word.translation_ru)}</h2>`, options, step.word.hanzi, step.word);
-    if (step.review) content.querySelectorAll('.course-option').forEach(button => button.addEventListener('click', () => gradeRuntimeWord(step.word, button.dataset.value === step.word.hanzi), { once: true }));
+    const options = lessonWordOptions(step.word, 'hanzi');
+    renderOptions(content, `<div class="course-skill">Узнавание</div><h2>${esc(step.word.translation_ru)}</h2><p>Выберите слово, которое передаёт этот смысл.</p>`, options, step.word.hanzi, step.word, '', step);
   }
 
-  function renderOptions(content, questionHtml, options, answer, word, explanation = '') {
+  function renderOptions(content, questionHtml, options, answer, word, explanation = '', step = null) {
     content.innerHTML = `${questionHtml}<div class="course-options">${options.map(value => `<button class="course-option" data-value="${esc(value)}">${esc(value)}</button>`).join('')}</div><div id="courseFeedback"></div>`;
     content.querySelectorAll('.course-option').forEach(button => button.onclick = () => {
-      const ok = button.dataset.value === String(answer); markResult(ok);
+      const ok = button.dataset.value === String(answer); if (step) recordStepResult(step, ok); else markResult(ok);
       content.querySelectorAll('.course-option').forEach(item => { item.disabled = true; if (item.dataset.value === String(answer)) item.classList.add('correct'); });
       if (!ok) button.classList.add('wrong');
       const chosen = [...wordById.values()].find(x => x.hanzi === button.dataset.value);
@@ -322,6 +396,98 @@
     document.getElementById('courseAudio').onclick = () => speak(step.dialogue.cn.replace(/[AB]：/g, '')); wireNext();
   }
 
+  function contextText(context, mode = 'plain') {
+    const text = String(context?.chinese || '');
+    const focus = String(context?.focus_hanzi || '');
+    if (!focus || !text.includes(focus)) return esc(text);
+    if (mode === 'blank') return text.split(focus).map(esc).join('<b class="focus">＿＿</b>');
+    if (mode === 'highlight') return text.split(focus).map(esc).join(`<span class="focus">${esc(focus)}</span>`);
+    return esc(text);
+  }
+
+  function renderContextListening(content, step) {
+    const { context, word } = step;
+    const options = lessonWordOptions(word, 'hanzi');
+    content.innerHTML = `<div class="course-skill">Аудирование</div><h2>Какое новое слово прозвучало в фразе?</h2><p>Сначала слушайте без текста. Фразу можно повторить медленнее.</p><div class="course-answer-actions"><button class="course-audio" id="courseAudio">▶ Обычная скорость</button><button class="course-audio" id="courseAudioSlow">▶ Медленно</button></div><div class="course-options">${options.map(value => `<button class="course-option" data-value="${esc(value)}">${esc(value)}</button>`).join('')}</div><div id="courseFeedback"></div>`;
+    document.getElementById('courseAudio').onclick = () => speak(context.chinese, .86);
+    document.getElementById('courseAudioSlow').onclick = () => speak(context.chinese, .64);
+    setTimeout(() => speak(context.chinese, .86), 180);
+    content.querySelectorAll('.course-option').forEach(button => button.onclick = () => {
+      const ok = button.dataset.value === word.hanzi; recordStepResult(step, ok);
+      content.querySelectorAll('.course-option').forEach(item => { item.disabled = true; if (item.dataset.value === word.hanzi) item.classList.add('correct'); });
+      if (!ok) button.classList.add('wrong');
+      const chosen = [...wordById.values()].find(item => item.hanzi === button.dataset.value);
+      document.getElementById('courseFeedback').innerHTML = `<div class="course-feedback ${ok ? 'ok' : 'bad'}"><b>${ok ? 'Услышали верно' : 'Пока не совпало'}</b>${!ok && chosen ? `<div>Ваш выбор: ${esc(chosen.hanzi)} · <span class="course-pinyin">${esc(chosen.pinyin)}</span></div>` : ''}<div class="course-context">${contextText(context, 'highlight')}</div><div class="course-pinyin">${esc(context.pinyin)}</div><div>${esc(word.hanzi)} — ${esc(word.translation_ru)}</div></div>${nextButton()}`;
+      wireNext();
+    });
+  }
+
+  function renderContextReading(content, step) {
+    const { context, word } = step;
+    const options = lessonWordOptions(word, 'translation_ru');
+    renderOptions(content, `<div class="course-skill">Чтение в контексте</div><div class="course-context">${contextText(context, 'highlight')}</div><h2>Что здесь означает «${esc(word.hanzi)}»?</h2><p>Пиньинь появится после ответа.</p>`, options, word.translation_ru, word, context.pinyin, step);
+  }
+
+  function renderGrammarUse(content, step) {
+    const grammar = step.grammar;
+    const pool = lessons.filter(lesson => lesson.hsk_level === active.hsk_level && lesson.grammar && lesson.grammar.id !== grammar.id).map(lesson => lesson.grammar);
+    const options = shuffled(unique([grammar.pattern, ...shuffled(pool).slice(0, 3).map(item => item.pattern)])).slice(0, 4);
+    renderOptions(content, `<div class="course-skill">Грамматика · выбор по смыслу</div><h2>Какая модель решает эту задачу?</h2><div class="course-hint">${esc(grammar.explanation_ru)}</div>`, options, grammar.pattern, null, `${grammar.title}: ${grammar.explanation_ru}`, step);
+  }
+
+  function renderContextOrder(content, step) {
+    const { context } = step, chosen = [];
+    content.innerHTML = `<div class="course-skill">Порядок слов</div><h2>Восстановите естественную фразу</h2><div id="courseBuilt" class="card course-context" style="min-height:62px"></div><div class="course-answer-actions" id="courseTokens">${shuffled(context.tokens).map((token, index) => `<button class="course-option" data-i="${index}" data-token="${esc(token)}">${esc(token)}</button>`).join('')}</div><div class="course-answer-actions"><button class="ghost" id="courseReset">Сбросить</button><button class="course-next" id="courseCheck">Проверить</button></div><div id="courseFeedback"></div>`;
+    const draw = () => { document.getElementById('courseBuilt').textContent = chosen.map(item => item.token).join(''); };
+    content.querySelectorAll('[data-token]').forEach(button => button.onclick = () => { chosen.push({ token: button.dataset.token, button }); button.disabled = true; draw(); });
+    document.getElementById('courseReset').onclick = () => { chosen.splice(0).forEach(item => { item.button.disabled = false; }); draw(); };
+    document.getElementById('courseCheck').onclick = () => {
+      const ok = norm(chosen.map(item => item.token).join('')) === norm(context.chinese); recordStepResult(step, ok);
+      document.getElementById('courseCheck').disabled = true;
+      document.getElementById('courseFeedback').innerHTML = `<div class="course-feedback ${ok ? 'ok' : 'bad'}"><b>${ok ? 'Порядок естественный' : 'Порядок нужно поправить'}</b><div class="course-context">${esc(context.chinese)}</div><div class="course-pinyin">${esc(context.pinyin)}</div>${!ok ? '<small>Сначала найдите подлежащее и время/место, затем сказуемое и объект.</small>' : ''}</div>${nextButton()}`;
+      wireNext();
+    };
+  }
+
+  function renderContextCloze(content, step) {
+    const { context, word } = step;
+    content.innerHTML = `<div class="course-skill">Пропуск в контексте</div><h2>Восстановите слово</h2><div class="course-context">${contextText(context, 'blank')}</div><div class="course-hint">Нужный смысл: ${esc(word.translation_ru)}</div><input class="course-input" id="courseInput" lang="zh" autocomplete="off" placeholder="Введите иероглифы"><button class="course-next" id="courseCheck">Проверить</button><div id="courseFeedback"></div>`;
+    document.getElementById('courseCheck').onclick = () => {
+      const value = document.getElementById('courseInput').value, ok = norm(value) === norm(word.hanzi); recordStepResult(step, ok);
+      const chosen = [...wordById.values()].find(item => value.includes(item.hanzi));
+      document.getElementById('courseCheck').disabled = true;
+      document.getElementById('courseFeedback').innerHTML = `<div class="course-feedback ${ok ? 'ok' : 'bad'}"><b>${ok ? 'Верно' : 'Нужно исправить'}</b>${!ok && chosen ? `<div>Введено: ${esc(chosen.hanzi)} · <span class="course-pinyin">${esc(chosen.pinyin)}</span></div>` : ''}<div class="course-context">${contextText(context, 'highlight')}</div><div class="course-pinyin">${esc(context.pinyin)}</div><div>${esc(word.hanzi)} — ${esc(word.translation_ru)}</div></div>${nextButton()}`;
+      wireNext();
+    };
+  }
+
+  function renderContextTranslation(content, step) {
+    const { context, word } = step;
+    content.innerHTML = `<div class="course-skill">Русский → 中文</div><h2>Напишите по-китайски</h2><div class="course-hint">${esc(word.translation_ru)}</div><input class="course-input" id="courseInput" lang="zh" autocomplete="off" placeholder="Введите слово"><button class="course-next" id="courseCheck">Проверить</button><div id="courseFeedback"></div>`;
+    document.getElementById('courseCheck').onclick = () => {
+      const value = document.getElementById('courseInput').value, ok = norm(value) === norm(word.hanzi); recordStepResult(step, ok);
+      const chosen = [...wordById.values()].find(item => value.includes(item.hanzi));
+      document.getElementById('courseCheck').disabled = true;
+      document.getElementById('courseFeedback').innerHTML = `<div class="course-feedback ${ok ? 'ok' : 'bad'}"><b>${ok ? 'Верно' : 'Нужно исправить'}</b>${!ok && chosen ? `<div>Введено: ${esc(chosen.hanzi)} · <span class="course-pinyin">${esc(chosen.pinyin)}</span></div>` : ''}<div>Правильно: <b>${esc(word.hanzi)}</b> · <span class="course-pinyin">${esc(word.pinyin)}</span></div><div class="course-hint">Живой контекст: ${esc(context.chinese)}<br><span class="course-pinyin">${esc(context.pinyin)}</span></div></div>${nextButton()}`;
+      wireNext();
+    };
+  }
+
+  function renderContextActive(content, step) {
+    const { context, word } = step;
+    content.innerHTML = `<div class="course-skill">Активная речь</div><h2>Скажите свою мысль со словом «${esc(word.hanzi)}»</h2><p>Напишите короткую фразу. Не копируйте образец — сначала сформулируйте самостоятельно.</p><textarea class="course-input" id="courseInput" rows="3" lang="zh" placeholder="Ваша фраза"></textarea><button class="course-next" id="courseReveal">Сравнить с живым примером</button><div id="courseFeedback"></div>`;
+    document.getElementById('courseReveal').onclick = () => {
+      const value = document.getElementById('courseInput').value.trim();
+      document.getElementById('courseReveal').disabled = true;
+      document.getElementById('courseFeedback').innerHTML = `<div class="course-feedback ${value ? 'ok' : 'bad'}"><b>${value ? 'Сравните смысл и порядок слов' : 'Сначала стоит попробовать самому'}</b><div class="course-context">${contextText(context, 'highlight')}</div><div class="course-pinyin">${esc(context.pinyin)}</div><div class="course-self-options"><button class="course-self-option" data-self="good">Получилось передать мысль</button><button class="course-self-option" data-self="retry">Нужно повторить</button></div></div>`;
+      content.querySelectorAll('[data-self]').forEach(button => button.onclick = () => {
+        const ok = button.dataset.self === 'good' && Boolean(value); recordStepResult(step, ok);
+        content.querySelectorAll('[data-self]').forEach(item => item.disabled = true);
+        document.getElementById('courseFeedback').insertAdjacentHTML('beforeend', nextButton()); wireNext();
+      });
+    };
+  }
+
   function renderChoice(content, step) {
     const item = step.item;
     renderOptions(content, `<div class="tiny">Понимание</div><div class="course-dialogue">${esc(item.text_cn)}</div><div class="course-pinyin">${esc(item.text_pinyin)}</div><h3>${esc(item.question_ru)}</h3>`, shuffled(item.options), item.answer, null);
@@ -365,16 +531,17 @@
   function renderGrammarReview(content, step) {
     const g = step.grammar;
     const options = shuffled(unique([g.pattern, ...shuffled([...grammarById.values()].filter(x => x.id !== g.id)).slice(0, 3).map(x => x.pattern)])).slice(0, 4);
-    renderOptions(content, `<div class="tiny">Повторение грамматики</div><h2>${esc(g.title)}</h2><p>${esc(g.explanation_ru)}</p>`, options, g.pattern, null, g.explanation_ru);
-    content.querySelectorAll('.course-option').forEach(button => button.addEventListener('click', () => gradeGrammar(g.id, button.dataset.value === g.pattern), { once: true }));
+    renderOptions(content, `<div class="course-skill">Грамматика · повторение</div><h2>${esc(g.title)}</h2><p>${esc(g.explanation_ru)}</p>`, options, g.pattern, null, g.explanation_ru, step);
   }
 
   function renderUnsupported(content) { content.innerHTML = `<p>Этот этап недоступен.</p>${nextButton()}`; wireNext(); }
 
-  function speak(text) {
-    try { if (typeof speakChinese === 'function') return speakChinese(text); } catch (_) {}
+  function speak(text, rate = .82) {
+    try { if (rate === .82 && typeof speakChinese === 'function') return speakChinese(text); } catch (_) {}
     if (!('speechSynthesis' in window)) return;
-    speechSynthesis.cancel(); const utterance = new SpeechSynthesisUtterance(text); utterance.lang = 'zh-CN'; utterance.rate = .82; speechSynthesis.speak(utterance);
+    speechSynthesis.cancel(); const utterance = new SpeechSynthesisUtterance(text); utterance.lang = 'zh-CN'; utterance.rate = rate;
+    const voice = speechSynthesis.getVoices().find(item => /^zh/i.test(item.lang)); if (voice) utterance.voice = voice;
+    speechSynthesis.speak(utterance);
   }
 
   function runtimeWord(word) { return WORDS.find(x => String(x.id) === String(word.id)); }
@@ -397,21 +564,37 @@
   function finishLesson() {
     const course = ensureCourseState();
     if (active.type === 'lesson') {
-      for (const word of active.vocabulary || []) gradeRuntimeWord(word, true);
-      if (active.grammar) gradeGrammar(active.grammar.id, true);
+      for (const word of active.vocabulary || []) {
+        const attempt = activeStats.wordAttempts[word.id];
+        gradeRuntimeWord(word, attempt ? attempt.correct / attempt.total >= .6 : true);
+      }
+      if (active.grammar) {
+        const attempt = activeStats.grammarAttempts[active.grammar.id];
+        gradeGrammar(active.grammar.id, attempt ? attempt.correct / attempt.total >= .6 : true);
+      }
     }
     if (active.type !== 'session-review') {
       course.completed[active.id] = nowMs();
-      course.lessonResults[active.id] = { completedAt: nowMs(), correct: activeStats.correct, total: activeStats.total };
+      course.lessonResults[active.id] = {
+        completedAt: nowMs(), correct: activeStats.correct, total: activeStats.total,
+        skills: JSON.parse(JSON.stringify(activeStats.skills)),
+      };
       const list = levelLessons(active.hsk_level), index = list.findIndex(x => x.id === active.id);
       const following = list.slice(index + 1).find(x => !isComplete(x.id));
       if (following) course.currentByLevel[String(active.hsk_level)] = following.id;
     }
     persistCourse();
+    const skillLabels = { recognition: 'узнавание', listening: 'аудирование', grammar: 'грамматика', reading: 'чтение', word_order: 'порядок слов', fill_blank: 'пропуски', translation: 'перевод', active_speech: 'активная речь' };
+    const weak = Object.entries(activeStats.skills)
+      .filter(([, item]) => item.total && item.correct / item.total < .6)
+      .map(([skill]) => skillLabels[skill] || skill);
+    const resultNote = weak.length
+      ? `На повторение поставлены: ${weak.join(', ')}. Ошибочные задания уже встретились ещё раз в конце занятия.`
+      : 'Все проверенные навыки в норме; следующий повтор будет по расписанию.';
     const next = currentLesson(course.startLevel);
     document.getElementById('courseProgress').style.width = '100%';
     document.getElementById('coursePhase').innerHTML = '<div class="eyebrow">Урок завершён</div>';
-    document.getElementById('courseContent').innerHTML = `<div class="course-summary"><div class="seal">好</div><h2>${esc(active.title)} — готово</h2><p>${activeStats.total ? `Правильных ответов: ${activeStats.correct} из ${activeStats.total}.` : 'Контрольное повторение завершено.'} Слова и грамматика добавлены в интервальное повторение.</p><div class="course-actions" style="justify-content:center"><button class="primary" id="courseFinish">На главную</button>${next && next.id !== active.id ? '<button class="ghost" id="courseNextLesson">Следующий урок</button>' : ''}</div></div>`;
+    document.getElementById('courseContent').innerHTML = `<div class="course-summary"><div class="seal">好</div><h2>${esc(active.title)} — готово</h2><p>${activeStats.total ? `Правильных ответов: ${activeStats.correct} из ${activeStats.total}.` : 'Контрольное повторение завершено.'}</p><p>${esc(resultNote)}</p><div class="course-actions" style="justify-content:center"><button class="primary" id="courseFinish">На главную</button>${next && next.id !== active.id ? '<button class="ghost" id="courseNextLesson">Следующий урок</button>' : ''}</div></div>`;
     document.getElementById('courseFinish').onclick = () => { closeLesson(); renderAllViews(); showView('today'); };
     const nextButtonEl = document.getElementById('courseNextLesson');
     if (nextButtonEl) nextButtonEl.onclick = () => startLesson(next.id);
@@ -419,16 +602,38 @@
 
   function startCourseReview() {
     const words = shuffled(dueVocabulary()).slice(0, 8).map(runtime => wordById.get(String(runtime.id))).filter(Boolean);
-    const grammars = shuffled(dueGrammar()).slice(0, 4);
-    if (!words.length && !grammars.length) {
+    const dueGrammars = shuffled(dueGrammar());
+    if (!words.length && !dueGrammars.length) {
       const lesson = currentLesson(); if (lesson) startLesson(lesson.id); return;
     }
+    const currentLevel = ensureCourseState().startLevel;
+    const completedContexts = shuffled(lessons
+      .filter(lesson => lesson.hsk_level === currentLevel && isComplete(lesson.id))
+      .flatMap(lesson => lesson.contexts || []));
+    const seenContexts = new Set();
+    const contexts = [...words.map(contextForWord).filter(Boolean), ...completedContexts]
+      .filter(context => !seenContexts.has(context.source_sentence_id) && seenContexts.add(context.source_sentence_id));
+    const grammar = dueGrammars[0] || shuffled(lessons
+      .filter(lesson => lesson.hsk_level === currentLevel && isComplete(lesson.id) && lesson.grammar)
+      .map(lesson => lesson.grammar))[0];
     active = { id: 'course-review', type: 'session-review', hsk_level: ensureCourseState().startLevel, title: 'Интервальное повторение' };
-    activeSteps = [
-      ...words.map((word, index) => ({ type: index % 3 === 0 ? 'listening-word' : index % 2 ? 'ru-hanzi' : 'hanzi-ru', word, review: true })),
-      ...grammars.map(grammar => ({ type: 'grammar-review', grammar })),
-    ];
-    activePos = 0; activeStats = { correct: 0, total: 0 };
+    if (contexts.length >= 3 && grammar) {
+      const [first, second, third] = contexts;
+      activeSteps = [
+        { type: 'context-listening', context: first, word: contextWord(first), skill: 'listening', review: true },
+        { type: 'ru-hanzi', word: contextWord(second), skill: 'recognition', review: true },
+        { type: 'grammar-review', grammar, skill: 'grammar', review: true },
+        { type: 'context-reading', context: second, word: contextWord(second), skill: 'reading', review: true },
+        { type: 'context-order', context: third, word: contextWord(third), skill: 'word_order', review: true },
+        { type: 'context-active', context: first, word: contextWord(first), skill: 'active_speech', review: true },
+      ].filter(step => !('word' in step) || step.word);
+    } else {
+      activeSteps = [
+        ...words.slice(0, 5).map((word, index) => ({ type: index % 3 === 0 ? 'listening-word' : index % 2 ? 'ru-hanzi' : 'hanzi-ru', word, skill: index % 3 === 0 ? 'listening' : 'recognition', review: true })),
+        ...(grammar ? [{ type: 'grammar-review', grammar, skill: 'grammar', review: true }] : []),
+      ];
+    }
+    activePos = 0; activeStats = { correct: 0, total: 0, skills: {}, wordAttempts: {}, grammarAttempts: {}, retryKeys: new Set() };
     makeModal(); document.getElementById('courseModal').classList.add('open'); renderStep();
   }
 
@@ -437,7 +642,7 @@
     if (!overlay) {
       overlay = document.createElement('div'); overlay.id = 'courseOnboarding'; overlay.className = 'course-onboarding'; document.body.appendChild(overlay);
     }
-    overlay.innerHTML = `<div class="course-onboarding-box"><div class="eyebrow">Chinese Study · Curriculum 1.0</div><h1>${settings ? 'Выберите текущий уровень' : 'С какого уровня начать?'}</h1><p>Тестирование не требуется. Выбор можно изменить позже; ваши материалы, слова и история занятий сохранятся.</p><div class="course-level-choice">${levels.map(level => `<button data-level="${level.hsk_level}"><b>HSK ${level.hsk_level}</b><small>${level.units.length} разделов · ${levelLessons(level.hsk_level).length} уроков</small></button>`).join('')}</div>${settings ? '<button class="ghost" id="courseCancelSettings" style="margin-top:12px">Отмена</button>' : ''}</div>`;
+    overlay.innerHTML = `<div class="course-onboarding-box"><div class="eyebrow">Chinese Study · Curriculum 1.1</div><h1>${settings ? 'Выберите текущий уровень' : 'С какого уровня начать?'}</h1><p>Тестирование не требуется. Выбор можно изменить позже; ваши материалы, слова и история занятий сохранятся.</p><div class="course-level-choice">${levels.map(level => `<button data-level="${level.hsk_level}"><b>HSK ${level.hsk_level}</b><small>${level.units.length} разделов · ${levelLessons(level.hsk_level).length} уроков</small></button>`).join('')}</div>${settings ? '<button class="ghost" id="courseCancelSettings" style="margin-top:12px">Отмена</button>' : ''}</div>`;
     overlay.querySelectorAll('[data-level]').forEach(button => button.onclick = () => {
       const course = ensureCourseState(); course.startLevel = Number(button.dataset.level); persistCourse(); overlay.remove(); renderAllViews();
     });
