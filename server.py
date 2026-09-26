@@ -583,9 +583,10 @@ class Handler(SimpleHTTPRequestHandler):
             if p.is_file():
                 html=p.read_text(encoding="utf-8")
                 html=re.sub(r'<script src="topic-study\.js\?v=[^"]+"></script>\s*',"",html)
+                html=re.sub(r'<script src="ai-import\.js\?v=[^"]+"></script>\s*',"",html)
                 html=re.sub(r'<script src="cloud-sync\.js\?v=[^"]+"></script>\s*',"",html)
                 html=re.sub(r'<script src="curriculum-app\.js\?v=[^"]+"></script>\s*',"",html)
-                html=html.replace("</body>",'<script src="topic-study.js?v=6.0"></script>\n<script src="curriculum-app.js?v=6.0"></script>\n<script src="cloud-sync.js?v=6.0"></script>\n</body>')
+                html=html.replace("</body>",'<script src="topic-study.js?v=6.0"></script>\n<script src="ai-import.js?v=6.0"></script>\n<script src="curriculum-app.js?v=6.0"></script>\n<script src="cloud-sync.js?v=6.0"></script>\n</body>')
                 return self.send_bytes(200,html.encode("utf-8"),"text/html; charset=utf-8","no-cache")
         return super().do_GET()
     def do_POST(self):
