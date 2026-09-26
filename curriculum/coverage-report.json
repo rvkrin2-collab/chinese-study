@@ -1,0 +1,56 @@
+{
+  "ok": true,
+  "errors": [],
+  "warnings": [],
+  "summary": {
+    "levels": 4,
+    "units": 20,
+    "lessons": 169,
+    "lexical_lessons": 149,
+    "review_lessons": 20,
+    "words": 1200,
+    "grammar_constructions": 149
+  },
+  "coverage": {
+    "1": {
+      "units": 5,
+      "lessons": 23,
+      "lexical_lessons": 18,
+      "review_lessons": 5,
+      "target_words": 150,
+      "covered_words": 150,
+      "word_coverage_percent": 100.0,
+      "grammar_constructions": 18
+    },
+    "2": {
+      "units": 5,
+      "lessons": 23,
+      "lexical_lessons": 18,
+      "review_lessons": 5,
+      "target_words": 150,
+      "covered_words": 150,
+      "word_coverage_percent": 100.0,
+      "grammar_constructions": 18
+    },
+    "3": {
+      "units": 5,
+      "lessons": 43,
+      "lexical_lessons": 38,
+      "review_lessons": 5,
+      "target_words": 299,
+      "covered_words": 299,
+      "word_coverage_percent": 100.0,
+      "grammar_constructions": 38
+    },
+    "4": {
+      "units": 5,
+      "lessons": 80,
+      "lexical_lessons": 75,
+      "review_lessons": 5,
+      "target_words": 601,
+      "covered_words": 601,
+      "word_coverage_percent": 100.0,
+      "grammar_constructions": 75
+    }
+  }
+}

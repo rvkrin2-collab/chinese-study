@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-import base64, json, os, re, subprocess, tempfile, threading, time, urllib.error, urllib.request, uuid
+import base64, hashlib, json, os, re, subprocess, tempfile, threading, time, urllib.error, urllib.request, uuid
 from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
 from pathlib import Path
 
@@ -19,8 +19,20 @@ MAX_BATCH_PDF_PAGES = 24
 STATE_FILE = Path(os.environ.get("CHINESE_STUDY_STATE_FILE", "/var/lib/chinese-study/state.json"))
 MAX_STATE = 4 * 1024 * 1024
 LIBRARY_FILE = Path(os.environ.get("CHINESE_STUDY_LIBRARY_FILE", "/var/lib/chinese-study/library.json"))
+RELEASE_ASSET_BASE = os.environ.get(
+    "CHINESE_STUDY_RELEASE_ASSET_BASE",
+    "https://raw.githubusercontent.com/rvkrin2-collab/chinese-study/main",
+).rstrip("/")
+RELEASE_ASSETS = {
+    "/curriculum-app.js": "curriculum-app.js",
+    "/curriculum/curriculum-v1.json": "curriculum/curriculum-v1.json",
+}
+RELEASE_ASSET_SHA256 = {
+    "curriculum-app.js": "077bd078c020019011da25fb1293e952f8735d2e9378ace72bbbb91725981709",
+    "curriculum/curriculum-v1.json": "ba1b707fb436c2f056800214956eba3079fb52f2624031f187078e1464ee5a30",
+}
 
-SYSTEM_PROMPT = """Ты методист по китайскому для русскоязычного ученика HSK3→HSK4.
+SYSTEM_PROMPT = """Ты методист по китайскому для русскоязычного ученика HSK 1–4.
 На входе — текст учебного материала, уже извлечённый из фото/PDF/TXT, и иногда заметка пользователя.
 Не придумывай факты о содержании источника и не угадывай неразборчивый текст. Упражнения можно создавать новые по теме и лексике источника.
 
@@ -28,7 +40,7 @@ SYSTEM_PROMPT = """Ты методист по китайскому для рус
 {"title_cn":"","title_pinyin":"","title_ru":"","summary_ru":"","source_text_cn":"","source_pinyin":"","words":[{"hanzi":"","pinyin":"","translation_ru":"","hsk_level":4,"example_cn":"","example_pinyin":"","example_ru":""}],"grammar":[{"pattern":"","meaning_ru":"","example_cn":"","example_pinyin":"","question":"","options":["","","",""],"answer":""}],"readings":[{"cn":"","pinyin":"","question":"","options":["","","",""],"answer_index":0}],"builds":[{"tokens":[""],"answer":"","pinyin":"","translation_ru":""}],"productions":[{"prompt_ru":"","answers":[""],"pinyin":""}]}.
 
 Правила:
-- 10–20 действительно полезных слов/выражений примерно HSK3–4; не набивай HSK1–2 словами ради количества.
+- 10–20 действительно полезных слов/выражений, соответствующих указанному текущему уровню пользователя; не набивай простыми словами ради количества.
 - 6–8 разных грамматических заданий.
 - 4–5 разных заданий на чтение.
 - ровно 6 заданий на порядок слов.
@@ -236,7 +248,8 @@ function mergeHistory(r,l){return uniq([...arr(r),...arr(l)],x=>[x?.ts,x?.id??''
 function mergeWords(r,l){const out={...(r||{})};for(const [id,v] of Object.entries(l||{})){const a=out[id];if(!a){out[id]=v;continue}const al=Number(a.last||0),vl=Number(v?.last||0);if(vl>al)out[id]=v;else if(vl===al){const as=(a.seen||0)+(a.reps||0)+(a.lapses||0),vs=(v?.seen||0)+(v?.reps||0)+(v?.lapses||0);if(vs>as)out[id]=v}}return out}
 function mergeSkills(r,l){const out={...(r||{})};for(const [k,v] of Object.entries(l||{})){const a=out[k]||{};out[k]=(Number(v?.total||0)>Number(a.total||0))?v:a}return out}
 function newerTopic(a,b){if(!a)return b;if(!b)return a;return Number(b.started||0)>Number(a.started||0)?b:a}
-function mergeState(remote,local){remote=remote&&typeof remote==='object'?remote:{};local=local&&typeof local==='object'?local:{};const o={...remote,...local};o.words=mergeWords(remote.words,local.words);o.history=mergeHistory(remote.history,local.history);o.skills=mergeSkills(remote.skills,local.skills);o.materials=mergeById(remote.materials,local.materials,80);o.customWords=mergeById(remote.customWords,local.customWords);o.customTopics=mergeById(remote.customTopics,local.customTopics);o.recentTasks=uniq([...arr(remote.recentTasks),...arr(local.recentTasks)],x=>String(x),50);o.recentVocabModes=uniq([...arr(remote.recentVocabModes),...arr(local.recentVocabModes)],x=>String(x),24);o.sessions=Math.max(Number(remote.sessions||0),Number(local.sessions||0));o.streak=Math.max(Number(remote.streak||1),Number(local.streak||1));o.lastDay=stampDay(local.lastDay)>=stampDay(remote.lastDay)?local.lastDay:remote.lastDay;o.activeTopic=newerTopic(remote.activeTopic,local.activeTopic)||null;return o}
+function mergeCurriculum(r,l){r=r&&typeof r==='object'?r:{};l=l&&typeof l==='object'?l:{};const newer=Number(l.updatedAt||0)>=Number(r.updatedAt||0)?l:r,older=newer===l?r:l,out={...older,...newer};out.schemaVersion=Math.max(Number(r.schemaVersion||0),Number(l.schemaVersion||0),1);out.completed={...(r.completed||{})};for(const [id,ts] of Object.entries(l.completed||{}))out.completed[id]=Math.max(Number(out.completed[id]||0),Number(ts||0));out.lessonResults={...(r.lessonResults||{})};for(const [id,v] of Object.entries(l.lessonResults||{})){if(Number(v?.completedAt||0)>=Number(out.lessonResults[id]?.completedAt||0))out.lessonResults[id]=v}out.grammarSrs=mergeWords(r.grammarSrs,l.grammarSrs);out.updatedAt=Math.max(Number(r.updatedAt||0),Number(l.updatedAt||0));return out}
+function mergeState(remote,local){remote=remote&&typeof remote==='object'?remote:{};local=local&&typeof local==='object'?local:{};const o={...remote,...local};o.words=mergeWords(remote.words,local.words);o.history=mergeHistory(remote.history,local.history);o.skills=mergeSkills(remote.skills,local.skills);o.materials=mergeById(remote.materials,local.materials,80);o.customWords=mergeById(remote.customWords,local.customWords);o.customTopics=mergeById(remote.customTopics,local.customTopics);o.curriculum=mergeCurriculum(remote.curriculum,local.curriculum);o.recentTasks=uniq([...arr(remote.recentTasks),...arr(local.recentTasks)],x=>String(x),50);o.recentVocabModes=uniq([...arr(remote.recentVocabModes),...arr(local.recentVocabModes)],x=>String(x),24);o.sessions=Math.max(Number(remote.sessions||0),Number(local.sessions||0));o.streak=Math.max(Number(remote.streak||1),Number(local.streak||1));o.lastDay=stampDay(local.lastDay)>=stampDay(remote.lastDay)?local.lastDay:remote.lastDay;o.activeTopic=newerTopic(remote.activeTopic,local.activeTopic)||null;return o}
 function libraryOf(x=state){return{materials:arr(x?.materials),customWords:arr(x?.customWords),customTopics:arr(x?.customTopics)}}
 function mergeLibrary(remote,local){return{materials:mergeById(remote?.materials,local?.materials,80),customWords:mergeById(remote?.customWords,local?.customWords),customTopics:mergeById(remote?.customTopics,local?.customTopics)}}
 function hydrate(){for(const w of arr(state.customWords)){if(typeof WORDS!=='undefined'&&!WORDS.some(x=>String(x.id)===String(w.id)))WORDS.push(w)}}
@@ -356,8 +369,10 @@ def parse_model_json(s):
         if a>=0 and b>a:return json.loads(s[a:b+1])
         raise RuntimeError("MiniMax вернул некорректный JSON темы.")
 
-def text_analyze(extracted,note=""):
-    user_text="Собери из этого материала одну общую учебную тему с большим запасом разнообразных упражнений минимум на несколько занятий. Если материал состоит из нескольких файлов, считай их частями одного урока, учитывай порядок файлов и не создавай отдельную тему на каждый файл.\n\nИЗВЛЕЧЁННЫЙ МАТЕРИАЛ:\n"+extracted[:90000]
+def text_analyze(extracted,note="",hsk_level=3):
+    try:hsk_level=max(1,min(4,int(hsk_level)))
+    except (TypeError,ValueError):hsk_level=3
+    user_text=f"Текущий уровень пользователя: HSK {hsk_level}. Собери из этого материала одну общую учебную тему с большим запасом разнообразных упражнений минимум на несколько занятий. Если материал состоит из нескольких файлов, считай их частями одного урока, учитывай порядок файлов и не создавай отдельную тему на каждый файл. Личная тема не должна объявлять новую грамматику частью основной Curriculum.\n\nИЗВЛЕЧЁННЫЙ МАТЕРИАЛ:\n"+extracted[:90000]
     if note:user_text+="\n\nЗАМЕТКА ПОЛЬЗОВАТЕЛЯ:\n"+note[:12000]
     payload={"model":MODEL,"max_tokens":14000,"system":SYSTEM_PROMPT,"messages":[{"role":"user","content":user_text}]}
     resp=http_json(TEXT_URL,payload,{"X-Api-Key":KEY,"Authorization":"Bearer "+KEY,"Content-Type":"application/json","anthropic-version":"2023-06-01"},220)
@@ -444,7 +459,7 @@ def analyze(payload, progress=None):
     extracted="\\n\\n".join(x for x in parts if x.strip())
     if not extracted:extracted,note=note,""
     _p("generating",f"{file_count} файл(ов)" if file_count else "текст")
-    return text_analyze(extracted,note)
+    return text_analyze(extracted,note,payload.get("hsk_level",3))
 
 
 # --- async analyze jobs: a single long request was dropping as "failed to fetch";
@@ -500,8 +515,44 @@ def analyze_job_status(job_id):
         if j["state"]=="error": out["error"],out["kind"]=j["error"],j.get("kind","server")
         return out
 
+def ensure_release_asset(request_path):
+    """Backwards-compatible bootstrap for VPSes with the pre-6.0 updater."""
+    relative = RELEASE_ASSETS.get(request_path)
+    if not relative:
+        return None
+    target = (APP / relative).resolve()
+    if target.is_file() and target.stat().st_size > 100:
+        return target
+    if APP not in target.parents:
+        return None
+    url = f"{RELEASE_ASSET_BASE}/{relative}"
+    request = urllib.request.Request(url, headers={"User-Agent": "ChineseStudy/6.0"})
+    try:
+        with urllib.request.urlopen(request, timeout=20) as response:
+            body = response.read(4 * 1024 * 1024)
+        if hashlib.sha256(body).hexdigest() != RELEASE_ASSET_SHA256[relative]:
+            raise ValueError("release asset checksum mismatch")
+        if relative.endswith(".js"):
+            text = body.decode("utf-8")
+            if "CHINESE_CURRICULUM" not in text or "MiniMax_API_KEY" in text:
+                raise ValueError("invalid curriculum client")
+        else:
+            data = json.loads(body.decode("utf-8"))
+            if data.get("version") != "1.0.0" or len(data.get("levels", [])) != 4:
+                raise ValueError("invalid curriculum data")
+        target.parent.mkdir(parents=True, exist_ok=True)
+        with tempfile.NamedTemporaryFile("wb", dir=target.parent, delete=False) as tmp:
+            tmp.write(body)
+            tmp_path = Path(tmp.name)
+        os.replace(tmp_path, target)
+        return target
+    except Exception as exc:
+        print(f"release asset bootstrap failed for {relative}: {exc}", flush=True)
+        return None
+
+
 class Handler(SimpleHTTPRequestHandler):
-    server_version="ChineseStudy/5.0"
+    server_version="ChineseStudy/6.0"
     def __init__(self,*a,**kw):super().__init__(*a,directory=str(APP),**kw)
     def send_bytes(self,status,body,ctype,cache="no-store"):
         self.send_response(status);self.send_header("Content-Type",ctype);self.send_header("Content-Length",str(len(body)));self.send_header("Cache-Control",cache);self.end_headers();self.wfile.write(body)
@@ -509,7 +560,7 @@ class Handler(SimpleHTTPRequestHandler):
     def do_GET(self):
         path=self.path.split("?",1)[0]
         if path.rstrip("/")=="/api/health":
-            return self.send_json(200,{"ok":True,"version":"5.0","provider":"MiniMax","ai_configured":bool(KEY),"model":MODEL,"vision":"coding_plan/vlm","saved_material_actions":True})
+            return self.send_json(200,{"ok":True,"version":"6.0","provider":"MiniMax","ai_configured":bool(KEY),"model":MODEL,"vision":"coding_plan/vlm","saved_material_actions":True,"curriculum":"1.0.0"})
         if path.rstrip("/")=="/api/state":
             return self.send_json(200,read_sync_state())
         if path.rstrip("/")=="/api/library":
@@ -521,12 +572,20 @@ class Handler(SimpleHTTPRequestHandler):
             return self.send_bytes(200,CLOUD_SYNC_JS.encode("utf-8"),"application/javascript; charset=utf-8")
         if path=="/topic-study.js":
             return self.send_bytes(200,TOPIC_STUDY_JS.encode("utf-8"),"application/javascript; charset=utf-8")
+        if path in RELEASE_ASSETS:
+            asset=ensure_release_asset(path)
+            if asset:
+                ctype="application/javascript; charset=utf-8" if path.endswith(".js") else "application/json; charset=utf-8"
+                return self.send_bytes(200,asset.read_bytes(),ctype,"public, max-age=300")
+            return self.send_json(503,{"error":"Curriculum asset unavailable"})
         if path in ("/","/index.html"):
             p=APP/"index.html"
             if p.is_file():
                 html=p.read_text(encoding="utf-8")
                 html=re.sub(r'<script src="topic-study\.js\?v=[^"]+"></script>\s*',"",html)
-                html=html.replace("</body>",'<script src="topic-study.js?v=5.0"></script>\n<script src="cloud-sync.js?v=5.0"></script>\n</body>')
+                html=re.sub(r'<script src="cloud-sync\.js\?v=[^"]+"></script>\s*',"",html)
+                html=re.sub(r'<script src="curriculum-app\.js\?v=[^"]+"></script>\s*',"",html)
+                html=html.replace("</body>",'<script src="topic-study.js?v=6.0"></script>\n<script src="curriculum-app.js?v=6.0"></script>\n<script src="cloud-sync.js?v=6.0"></script>\n</body>')
                 return self.send_bytes(200,html.encode("utf-8"),"text/html; charset=utf-8","no-cache")
         return super().do_GET()
     def do_POST(self):
@@ -562,5 +621,5 @@ class Handler(SimpleHTTPRequestHandler):
 
 if __name__=="__main__":
     APP.mkdir(parents=True,exist_ok=True)
-    print(f"Chinese Study 5.0 + MiniMax on http://{HOST}:{PORT}",flush=True)
+    print(f"Chinese Study 6.0 + Curriculum 1.0 + MiniMax on http://{HOST}:{PORT}",flush=True)
     ThreadingHTTPServer((HOST,PORT),Handler).serve_forever()

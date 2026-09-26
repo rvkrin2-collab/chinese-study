@@ -91,9 +91,11 @@ PY
   changed=1
 fi
 
-for f in server.py ai-import.js; do
+for f in server.py ai-import.js curriculum-app.js curriculum/curriculum-v1.json; do
+  mkdir -p "$(dirname "$TMP/$f")"
   curl -fsSL --retry 3 --connect-timeout 10 "$BASE/$f" -o "$TMP/$f"
   if ! cmp -s "$TMP/$f" "$APP_DIR/$f" 2>/dev/null; then
+    mkdir -p "$(dirname "$APP_DIR/$f")"
     install -m 0644 "$TMP/$f" "$APP_DIR/$f"
     changed=1
   fi

@@ -37,7 +37,7 @@ async function analyze(){
       status('<div class="aim-prog"><div class="aim-prog-txt">Готовлю файл '+(i+1)+' из '+files.length+': '+esc(file.name)+'</div></div>','busy');
       packed.push({filename:file.name,mime_type:file.type||'',data_base64:await b64(file)});
     }
-    const body={text,study_mode:mode,files:packed};
+    const body={text,study_mode:mode,hsk_level:Number(state?.curriculum?.startLevel||3),files:packed};
     const s0=await fetch('api/materials/analyze',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
     const sd=await s0.json().catch(()=>({}));
     if(!s0.ok||!sd.job_id)throw Error(sd.error||`Ошибка сервера ${s0.status}`);

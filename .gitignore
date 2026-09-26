@@ -1,0 +1,5 @@
+**/__pycache__/
+*.py[cod]
+android-app/node_modules/
+android-app/android/
+dist/ChineseStudy.apk
