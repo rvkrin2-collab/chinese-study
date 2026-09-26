@@ -73,8 +73,8 @@ try {
     document.querySelector('#aiMatModal input[value="words"]').checked = true;
     document.getElementById('aimPreview').innerHTML = `<div class="aim-title">Тест</div><h3>Слова</h3><div class="aim-word"><input type="checkbox" checked><b>${known}</b><small>py</small><span>known</span></div><div class="aim-word"><input type="checkbox" checked><b>${upcoming}</b><small>py</small><span>upcoming</span></div><div class="aim-word"><input type="checkbox" checked><b>不存在词</b><small>bù cúnzài</small><span>new</span></div>`;
   }, { known: firstHsk3.vocabulary[0].hanzi, upcoming: data.levels.find(x => x.hsk_level === 3).units[0].lessons[1].vocabulary[0].hanzi });
-  await page.getByText('В материале 3 слов').waitFor();
-  assert.match(await page.locator('#aimPreview .card').innerText(), /1 уже изучались/);
+  await page.waitForFunction(() => document.querySelector('#aimPreview .card')?.textContent.includes('В материале 3 слов'));
+  assert.match(await page.locator('#aimPreview .card').textContent(), /1 уже изучались/);
   assert.equal(await page.locator('#aimPreview .aim-word input:checked').count(), 1);
   await page.locator('#courseFinish').click();
 
