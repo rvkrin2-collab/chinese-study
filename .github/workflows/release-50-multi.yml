@@ -1,0 +1,32 @@
+name: Release 5.0 multi-file materials
+on:
+  push:
+    branches: [main]
+permissions:
+  contents: write
+jobs:
+  release:
+    if: ${{ github.actor != 'github-actions[bot]' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Patch and validate
+        run: |
+          python3 .github/scripts/release_50_multi.py
+          python3 -m py_compile server.py
+          node --check ai-import.js
+          grep -q '^version=5.0$' manifest.txt
+          grep -q 'multiple accept=' ai-import.js
+          grep -q 'payload.get("files")' server.py
+          grep -q 'MAX_BATCH_FILES = 10' server.py
+      - name: Commit release
+        run: |
+          rm -f .github/scripts/release_50_multi.py .github/workflows/release-50-multi.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Release 5.0 multi-file material import"
+          git push
