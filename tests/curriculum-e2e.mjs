@@ -46,7 +46,7 @@ try {
   assert.equal(await page.locator('#aimCamera').getAttribute('capture'), 'environment');
   assert.match(await page.locator('#view-today .mission').innerText(), /8 новых слов|7 новых слов|9 новых слов/);
   await page.locator('#continueCourse').click();
-  await page.getByText('Новая лексика').waitFor();
+  await page.getByRole('heading', { name: 'Новая лексика', exact: true }).waitFor();
   await page.locator('#courseNext').click();
 
   // Deliberately choose a wrong answer and verify non-blocking feedback with pinyin.
