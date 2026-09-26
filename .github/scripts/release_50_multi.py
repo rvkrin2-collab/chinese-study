@@ -89,7 +89,7 @@ pv=pv.replace(needle2,"<p>${esc(x.summary_ru)}</p>${sourceFilesHtml}<div class=\
 a=a[:start]+pv+a[end:]
 
 old_topic="sourceText:x.source_text_cn,sourcePinyin:x.source_pinyin}"
-new_topic="sourceText:x.source_text_cn,sourcePinyin:x.source_pinyin,sourceFiles:[...(x._fileNames||[])]"
+new_topic="sourceText:x.source_text_cn,sourcePinyin:x.source_pinyin,sourceFiles:[...(x._fileNames||[])]}"
 assert old_topic in a, "topic source anchor not found"
 a=a.replace(old_topic,new_topic,1)
 
