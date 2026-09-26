@@ -11,8 +11,11 @@ API_HOST = os.environ.get("MINIMAX_API_HOST", "https://api.minimax.io").rstrip("
 MODEL = os.environ.get("MINIMAX_MODEL", "MiniMax-M3").strip() or "MiniMax-M3"
 TEXT_URL = API_HOST + "/anthropic/v1/messages"
 VLM_URL = API_HOST + "/v1/coding_plan/vlm"
-MAX_REQUEST = 18 * 1024 * 1024
+MAX_REQUEST = 55 * 1024 * 1024
 MAX_FILE = 12 * 1024 * 1024
+MAX_BATCH_FILES = 10
+MAX_BATCH_BYTES = 30 * 1024 * 1024
+MAX_BATCH_PDF_PAGES = 24
 STATE_FILE = Path(os.environ.get("CHINESE_STUDY_STATE_FILE", "/var/lib/chinese-study/state.json"))
 MAX_STATE = 4 * 1024 * 1024
 LIBRARY_FILE = Path(os.environ.get("CHINESE_STUDY_LIBRARY_FILE", "/var/lib/chinese-study/library.json"))
@@ -354,7 +357,7 @@ def parse_model_json(s):
         raise RuntimeError("MiniMax вернул некорректный JSON темы.")
 
 def text_analyze(extracted,note=""):
-    user_text="Собери из этого материала новую учебную тему с большим запасом разнообразных упражнений минимум на несколько занятий.\n\nИЗВЛЕЧЁННЫЙ МАТЕРИАЛ:\n"+extracted[:90000]
+    user_text="Собери из этого материала одну общую учебную тему с большим запасом разнообразных упражнений минимум на несколько занятий. Если материал состоит из нескольких файлов, считай их частями одного урока, учитывай порядок файлов и не создавай отдельную тему на каждый файл.\n\nИЗВЛЕЧЁННЫЙ МАТЕРИАЛ:\n"+extracted[:90000]
     if note:user_text+="\n\nЗАМЕТКА ПОЛЬЗОВАТЕЛЯ:\n"+note[:12000]
     payload={"model":MODEL,"max_tokens":14000,"system":SYSTEM_PROMPT,"messages":[{"role":"user","content":user_text}]}
     resp=http_json(TEXT_URL,payload,{"X-Api-Key":KEY,"Authorization":"Bearer "+KEY,"Content-Type":"application/json","anthropic-version":"2023-06-01"},220)
@@ -373,34 +376,74 @@ def analyze(payload, progress=None):
             except Exception: pass
     if not KEY:raise RuntimeError("На VPS не настроен MINIMAX_API_KEY.")
     note=str(payload.get("text") or "").strip()
-    mime=str(payload.get("mime_type") or "").lower().split(";")[0]
-    b64=str(payload.get("data_base64") or "")
-    if not note and not b64:raise ValueError("Добавь текст, фото или PDF.")
+
+    raw_items=payload.get("files")
+    items=[]
+    if isinstance(raw_items,list) and raw_items:
+        if len(raw_items)>MAX_BATCH_FILES:
+            raise ValueError(f"Можно загрузить максимум {MAX_BATCH_FILES} файлов за один раз.")
+        for item in raw_items:
+            if not isinstance(item,dict):raise ValueError("Некорректный список файлов.")
+            items.append({
+                "filename":str(item.get("filename") or "").strip(),
+                "mime_type":str(item.get("mime_type") or "").lower().split(";")[0],
+                "data_base64":str(item.get("data_base64") or "")
+            })
+    else:
+        legacy_b64=str(payload.get("data_base64") or "")
+        if legacy_b64:
+            items=[{
+                "filename":str(payload.get("filename") or "").strip(),
+                "mime_type":str(payload.get("mime_type") or "").lower().split(";")[0],
+                "data_base64":legacy_b64
+            }]
+
+    if not note and not items:raise ValueError("Добавь текст, фото или PDF.")
+
     parts=[]
-    if b64:
-        _p("received")
+    total_bytes=0
+    pdf_pages_used=0
+    file_count=len(items)
+    for file_no,item in enumerate(items,1):
+        filename=item["filename"] or f"файл {file_no}"
+        mime=item["mime_type"]
+        b64=item["data_base64"]
+        if not b64:continue
+        _p("reading_file",f"{file_no}/{file_count} · {filename}")
         try:raw=base64.b64decode(b64,validate=True)
-        except Exception as e:raise ValueError("Не удалось прочитать файл.") from e
-        if len(raw)>MAX_FILE:raise ValueError("Файл больше 12 МБ.")
-        if mime=="application/pdf":
-            pages=pdf_to_images(raw,progress=lambda st,dt="":_p(st,dt))
-            total=len(pages)
-            for i,page in enumerate(pages,1):
-                _p("reading_page",f"{i}/{total}")
-                parts.append(f"--- Страница {i} ---\n"+vlm_read_image("image/jpeg",page,f"страница {i} PDF"))
+        except Exception as e:raise ValueError(f"Не удалось прочитать файл «{filename}».") from e
+        if len(raw)>MAX_FILE:raise ValueError(f"Файл «{filename}» больше 12 МБ.")
+        total_bytes+=len(raw)
+        if total_bytes>MAX_BATCH_BYTES:raise ValueError("Суммарный размер файлов больше 30 МБ.")
+
+        header=f"--- Файл {file_no} из {file_count}: {filename} ---"
+        if mime=="application/pdf" or filename.lower().endswith(".pdf"):
+            _p("rendering_pdf",f"{file_no}/{file_count} · {filename}")
+            pages=pdf_to_images(raw)
+            remaining=MAX_BATCH_PDF_PAGES-pdf_pages_used
+            if remaining<=0:
+                raise ValueError(f"В одном материале можно обработать не более {MAX_BATCH_PDF_PAGES} PDF-страниц суммарно.")
+            if len(pages)>remaining:pages=pages[:remaining]
+            pdf_pages_used+=len(pages)
+            extracted_pages=[]
+            for page_no,page in enumerate(pages,1):
+                _p("reading_page",f"{page_no}/{len(pages)}|файл {file_no}/{file_count}: {filename}")
+                extracted_pages.append(f"[Страница {page_no}]\\n"+vlm_read_image("image/jpeg",page,f"страница {page_no} файла {filename}"))
+            parts.append(header+"\\n"+"\\n".join(extracted_pages))
         elif mime in ("image/jpeg","image/png","image/webp"):
-            _p("reading_image")
-            parts.append(vlm_read_image(mime,raw))
+            _p("reading_image",f"{file_no}/{file_count} · {filename}")
+            parts.append(header+"\\n"+vlm_read_image(mime,raw,f"файл {filename}"))
         elif mime=="image/gif":
-            raise ValueError("GIF не поддерживается MiniMax VLM. Сохрани кадр как JPG/PNG/WebP.")
-        elif mime.startswith("text/") or mime in ("application/octet-stream",""):
-            _p("reading_text")
-            parts.append(raw.decode("utf-8","replace")[:90000])
+            raise ValueError(f"GIF «{filename}» не поддерживается MiniMax VLM. Сохрани кадр как JPG/PNG/WebP.")
+        elif mime.startswith("text/") or mime in ("application/octet-stream","") or filename.lower().endswith(".txt"):
+            _p("reading_text",f"{file_no}/{file_count} · {filename}")
+            parts.append(header+"\\n"+raw.decode("utf-8","replace")[:90000])
         else:
-            raise ValueError("Поддерживаются JPG, PNG, WebP, PDF и TXT.")
-    extracted="\n\n".join(x for x in parts if x.strip())
+            raise ValueError(f"Формат файла «{filename}» не поддерживается. Нужны JPG, PNG, WebP, PDF или TXT.")
+
+    extracted="\\n\\n".join(x for x in parts if x.strip())
     if not extracted:extracted,note=note,""
-    _p("generating")
+    _p("generating",f"{file_count} файл(ов)" if file_count else "текст")
     return text_analyze(extracted,note)
 
 
@@ -458,7 +501,7 @@ def analyze_job_status(job_id):
         return out
 
 class Handler(SimpleHTTPRequestHandler):
-    server_version="ChineseStudy/4.9"
+    server_version="ChineseStudy/5.0"
     def __init__(self,*a,**kw):super().__init__(*a,directory=str(APP),**kw)
     def send_bytes(self,status,body,ctype,cache="no-store"):
         self.send_response(status);self.send_header("Content-Type",ctype);self.send_header("Content-Length",str(len(body)));self.send_header("Cache-Control",cache);self.end_headers();self.wfile.write(body)
@@ -466,7 +509,7 @@ class Handler(SimpleHTTPRequestHandler):
     def do_GET(self):
         path=self.path.split("?",1)[0]
         if path.rstrip("/")=="/api/health":
-            return self.send_json(200,{"ok":True,"version":"4.9","provider":"MiniMax","ai_configured":bool(KEY),"model":MODEL,"vision":"coding_plan/vlm","saved_material_actions":True})
+            return self.send_json(200,{"ok":True,"version":"5.0","provider":"MiniMax","ai_configured":bool(KEY),"model":MODEL,"vision":"coding_plan/vlm","saved_material_actions":True})
         if path.rstrip("/")=="/api/state":
             return self.send_json(200,read_sync_state())
         if path.rstrip("/")=="/api/library":
@@ -483,7 +526,7 @@ class Handler(SimpleHTTPRequestHandler):
             if p.is_file():
                 html=p.read_text(encoding="utf-8")
                 html=re.sub(r'<script src="topic-study\.js\?v=[^"]+"></script>\s*',"",html)
-                html=html.replace("</body>",'<script src="topic-study.js?v=4.8"></script>\n<script src="cloud-sync.js?v=4.8"></script>\n</body>')
+                html=html.replace("</body>",'<script src="topic-study.js?v=5.0"></script>\n<script src="cloud-sync.js?v=5.0"></script>\n</body>')
                 return self.send_bytes(200,html.encode("utf-8"),"text/html; charset=utf-8","no-cache")
         return super().do_GET()
     def do_POST(self):
@@ -519,5 +562,5 @@ class Handler(SimpleHTTPRequestHandler):
 
 if __name__=="__main__":
     APP.mkdir(parents=True,exist_ok=True)
-    print(f"Chinese Study 4.9 + MiniMax on http://{HOST}:{PORT}",flush=True)
+    print(f"Chinese Study 5.0 + MiniMax on http://{HOST}:{PORT}",flush=True)
     ThreadingHTTPServer((HOST,PORT),Handler).serve_forever()
