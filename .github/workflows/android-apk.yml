@@ -32,12 +32,16 @@ jobs:
         working-directory: android-app
         run: npm install --no-audit --no-fund
 
+      - name: Validate web client
+        run: node --check ai-import.js
+
       - name: Generate Android project
         working-directory: android-app
         run: |
           rm -rf android
           npx cap add android
           npx cap sync android
+          python3 customize_android.py
 
       - name: Build debug APK
         working-directory: android-app/android
@@ -61,5 +65,5 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          TAG="android-v0.1.${GITHUB_RUN_NUMBER}"
-          gh release create "$TAG" dist/ChineseStudy.apk             --target "$GITHUB_SHA"             --title "Китайский Android 0.1.${GITHUB_RUN_NUMBER}"             --notes "Первая Android-сборка Chinese Study. Приложение использует текущий учебный сайт на VPS, поэтому учебный контент обновляется без переустановки APK."
+          TAG="android-v0.2.${GITHUB_RUN_NUMBER}"
+          gh release create "$TAG" dist/ChineseStudy.apk             --target "$GITHUB_SHA"             --title "Китайский Android 0.2.${GITHUB_RUN_NUMBER}"             --notes "Android 0.2: фирменная иконка 中, splash-screen, корректная кнопка Назад и камера для добавления учебных материалов. Учебный контент обновляется с VPS без переустановки APK."
