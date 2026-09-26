@@ -152,7 +152,7 @@
 
   function renderCourseRoad(selectedLevel) {
     const course = ensureCourseState();
-    const levelNo = Number(selectedLevel || document.querySelector('#courseLevelTabs .active')?.dataset.level || course.startLevel || 1);
+    const levelNo = Number(selectedLevel || course.startLevel || document.querySelector('#courseLevelTabs .active')?.dataset.level || 1);
     const tabs = document.getElementById('courseLevelTabs');
     const road = document.getElementById('courseRoad');
     if (!tabs || !road) return;

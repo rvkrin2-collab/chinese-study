@@ -28,7 +28,7 @@ RELEASE_ASSETS = {
     "/curriculum/curriculum-v1.json": "curriculum/curriculum-v1.json",
 }
 RELEASE_ASSET_SHA256 = {
-    "curriculum-app.js": "077bd078c020019011da25fb1293e952f8735d2e9378ace72bbbb91725981709",
+    "curriculum-app.js": "2cfd201839f9d04691d2511897f49b5b8bf9aee3a37957f0d46d305feb53156d",
     "curriculum/curriculum-v1.json": "ba1b707fb436c2f056800214956eba3079fb52f2624031f187078e1464ee5a30",
 }
 
