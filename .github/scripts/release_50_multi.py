@@ -28,7 +28,7 @@ a=a.replace(old_labels,new_labels,1)
 progress_start=a.index("  if(stage==='reading_page'&&detail){")
 progress_end=a.index("\n  status(",progress_start)
 new_progress="""  if(stage==='reading_file'&&detail){label='Обрабатываю '+String(detail);}
-  if(stage==='reading_page'&&detail){const bits=String(detail).split('|'),p=bits[0].split('/'),aa=+p[0]||1,bb=+p[1]||1;label=\`Распознаю страницу ${aa} из ${bb}${bits[1]?' · '+bits[1]:''}…\`;pct=Math.min(90,42+Math.round(aa/Math.max(1,bb)*40));}
+  if(stage==='reading_page'&&detail){const bits=String(detail).split('|'),p=bits[0].split('/'),aa=+p[0]||1,bb=+p[1]||1;label=`Распознаю страницу ${aa} из ${bb}${bits[1]?' · '+bits[1]:''}…`;pct=Math.min(90,42+Math.round(aa/Math.max(1,bb)*40));}
   else if(detail&&['reading_image','reading_text','rendering_pdf'].includes(stage)){label+=(detail?' · '+detail:'');}
 """
 a=a[:progress_start]+new_progress+a[progress_end:]
@@ -55,7 +55,7 @@ new_analyze=r"""async function analyze(){
     const body={text,study_mode:mode,files:packed};
     const s0=await fetch('api/materials/analyze',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
     const sd=await s0.json().catch(()=>({}));
-    if(!s0.ok||!sd.job_id)throw Error(sd.error||\`Ошибка сервера ${s0.status}\`);
+    if(!s0.ok||!sd.job_id)throw Error(sd.error||`Ошибка сервера ${s0.status}`);
     const job=sd.job_id,began=Date.now();let fails=0;
     for(;;){
       await new Promise(r=>setTimeout(r,1500));
