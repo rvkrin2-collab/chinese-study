@@ -25,14 +25,13 @@ new_labels="const AIM_LABELS={queued:'Файлы получены, начина�
 assert old_labels in a, "labels anchor not found"
 a=a.replace(old_labels,new_labels,1)
 
-old_progress="""  if(stage==='reading_page'&&detail){const p=String(detail).split('/'),a=+p[0]||1,b=+p[1]||1;label=\`Распознаю страницу ${a} из ${b}…\`;pct=Math.min(90,42+Math.round(a/Math.max(1,b)*40));}
-"""
+progress_start=a.index("  if(stage==='reading_page'&&detail){")
+progress_end=a.index("\n  status(",progress_start)
 new_progress="""  if(stage==='reading_file'&&detail){label='Обрабатываю '+String(detail);}
   if(stage==='reading_page'&&detail){const bits=String(detail).split('|'),p=bits[0].split('/'),aa=+p[0]||1,bb=+p[1]||1;label=\`Распознаю страницу ${aa} из ${bb}${bits[1]?' · '+bits[1]:''}…\`;pct=Math.min(90,42+Math.round(aa/Math.max(1,bb)*40));}
   else if(detail&&['reading_image','reading_text','rendering_pdf'].includes(stage)){label+=(detail?' · '+detail:'');}
 """
-assert old_progress in a, "progress anchor not found"
-a=a.replace(old_progress,new_progress,1)
+a=a[:progress_start]+new_progress+a[progress_end:]
 
 start=a.index("async function analyze(){")
 end=a.index("\nfunction preview(){",start)
