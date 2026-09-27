@@ -139,7 +139,7 @@ public class MainActivity extends BridgeActivity {{
   }}
 
   @Override
-  protected void onDestroy() {{
+  public void onDestroy() {{
     if (speech != null) {{ speech.stop(); speech.shutdown(); }}
     super.onDestroy();
   }}
