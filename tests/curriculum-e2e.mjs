@@ -78,9 +78,6 @@ try {
   await page.locator('#continueCourse').click();
   await page.getByRole('heading', { name: 'Новая лексика', exact: true }).waitFor();
   await page.locator('#courseNext').click();
-  await page.locator('#courseAudio').click();
-  await page.waitForFunction(() => window.__spoken.length > 0);
-  assert.equal(await page.evaluate(() => window.__spoken.at(-1)), firstHsk3.contexts[0].chinese);
 
   // Deliberately choose a wrong answer and verify non-blocking feedback with pinyin.
   const wrong = page.locator('.course-option').filter({ hasNotText: firstContextWord.hanzi }).first();
@@ -90,6 +87,10 @@ try {
   assert.ok((await feedback.innerText()).includes(firstContextWord.pinyin), 'wrong-answer feedback must include pinyin');
   assert.equal(await page.locator('#courseNext').count(), 1, 'wrong answer must allow continuing');
   await page.locator('#courseNext').click();
+  await page.getByRole('heading', { name: 'Какое новое слово прозвучало в фразе?', exact: true }).waitFor();
+  await page.locator('#courseAudio').click();
+  await page.waitForFunction(() => window.__spoken.length > 0);
+  assert.equal(await page.evaluate(() => window.__spoken.at(-1)), firstHsk3.contexts[0].chinese);
 
   let sawCheckedProduction = false;
   for (let i = 0; i < 40 && !(await page.locator('.course-summary').count()); i++) {
