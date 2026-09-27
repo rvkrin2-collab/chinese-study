@@ -10,8 +10,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT_TAGS = """<script>window.CHINESE_STUDY_NATIVE = true;</script>
-<script src="ai-import.js?v=6.3"></script>
-<script src="curriculum-app.js?v=6.3"></script>
+<script src="ai-import.js?v=6.4"></script>
+<script src="curriculum-app.js?v=6.4"></script>
 """
 
 

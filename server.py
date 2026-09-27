@@ -28,7 +28,7 @@ RELEASE_ASSETS = {
     "/curriculum/curriculum-v1.json": "curriculum/curriculum-v1.json",
 }
 RELEASE_ASSET_SHA256 = {
-    "curriculum-app.js": "3aef5377af04ebbe347129f3dec7d91c61ac73a2c8d47abc6a62a5ecab3b1505",
+    "curriculum-app.js": "663cb18c5e1a9f954baa813de499f49024970cdb3bfe534ccb8542bd4e05e980",
     "curriculum/curriculum-v1.json": "fc9f1f00a094d1f1e556e6c8423198b6b9c49103ab4ae487a39873944ad59626",
 }
 
@@ -516,21 +516,24 @@ def analyze_job_status(job_id):
         return out
 
 def ensure_release_asset(request_path):
-    """Backwards-compatible bootstrap for VPSes with the pre-6.2 updater."""
+    """Keep curriculum assets current even when an old VPS updater is installed."""
     relative = RELEASE_ASSETS.get(request_path)
     if not relative:
         return None
     target = (APP / relative).resolve()
-    if target.is_file() and target.stat().st_size > 100:
-        return target
     if APP not in target.parents:
         return None
+    expected_sha = RELEASE_ASSET_SHA256[relative]
+    if target.is_file():
+        current_sha = hashlib.sha256(target.read_bytes()).hexdigest()
+        if current_sha == expected_sha:
+            return target
     url = f"{RELEASE_ASSET_BASE}/{relative}"
-    request = urllib.request.Request(url, headers={"User-Agent": "ChineseStudy/6.3"})
+    request = urllib.request.Request(url, headers={"User-Agent": "ChineseStudy/6.4"})
     try:
         with urllib.request.urlopen(request, timeout=20) as response:
             body = response.read(4 * 1024 * 1024)
-        if hashlib.sha256(body).hexdigest() != RELEASE_ASSET_SHA256[relative]:
+        if hashlib.sha256(body).hexdigest() != expected_sha:
             raise ValueError("release asset checksum mismatch")
         if relative.endswith(".js"):
             text = body.decode("utf-8")
@@ -552,7 +555,7 @@ def ensure_release_asset(request_path):
 
 
 class Handler(SimpleHTTPRequestHandler):
-    server_version="ChineseStudy/6.3"
+    server_version="ChineseStudy/6.4"
     def __init__(self,*a,**kw):super().__init__(*a,directory=str(APP),**kw)
     def send_bytes(self,status,body,ctype,cache="no-store"):
         self.send_response(status);self.send_header("Content-Type",ctype);self.send_header("Content-Length",str(len(body)));self.send_header("Cache-Control",cache);self.end_headers();self.wfile.write(body)
@@ -560,7 +563,7 @@ class Handler(SimpleHTTPRequestHandler):
     def do_GET(self):
         path=self.path.split("?",1)[0]
         if path.rstrip("/")=="/api/health":
-            return self.send_json(200,{"ok":True,"version":"6.3","provider":"MiniMax","ai_configured":bool(KEY),"model":MODEL,"vision":"coding_plan/vlm","saved_material_actions":True,"curriculum":"1.1.0"})
+            return self.send_json(200,{"ok":True,"version":"6.4","provider":"MiniMax","ai_configured":bool(KEY),"model":MODEL,"vision":"coding_plan/vlm","saved_material_actions":True,"curriculum":"1.1.0"})
         if path.rstrip("/")=="/api/state":
             return self.send_json(200,read_sync_state())
         if path.rstrip("/")=="/api/library":
@@ -586,7 +589,7 @@ class Handler(SimpleHTTPRequestHandler):
                 html=re.sub(r'<script src="ai-import\.js\?v=[^"]+"></script>\s*',"",html)
                 html=re.sub(r'<script src="cloud-sync\.js\?v=[^"]+"></script>\s*',"",html)
                 html=re.sub(r'<script src="curriculum-app\.js\?v=[^"]+"></script>\s*',"",html)
-                html=html.replace("</body>",'<script src="topic-study.js?v=6.3"></script>\n<script src="ai-import.js?v=6.3"></script>\n<script src="curriculum-app.js?v=6.3"></script>\n<script src="cloud-sync.js?v=6.3"></script>\n</body>')
+                html=html.replace("</body>",'<script src="topic-study.js?v=6.4"></script>\n<script src="ai-import.js?v=6.4"></script>\n<script src="curriculum-app.js?v=6.4"></script>\n<script src="cloud-sync.js?v=6.4"></script>\n</body>')
                 return self.send_bytes(200,html.encode("utf-8"),"text/html; charset=utf-8","no-cache")
         return super().do_GET()
     def do_POST(self):
@@ -622,5 +625,5 @@ class Handler(SimpleHTTPRequestHandler):
 
 if __name__=="__main__":
     APP.mkdir(parents=True,exist_ok=True)
-    print(f"Chinese Study 6.3 + Curriculum 1.1 + MiniMax on http://{HOST}:{PORT}",flush=True)
+    print(f"Chinese Study 6.4 + Curriculum 1.1 + MiniMax on http://{HOST}:{PORT}",flush=True)
     ThreadingHTTPServer((HOST,PORT),Handler).serve_forever()

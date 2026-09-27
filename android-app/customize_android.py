@@ -84,40 +84,67 @@ if styles.exists():
         s=s.replace("</resources>",launch+"\n</resources>")
     styles.write_text(s,encoding="utf-8")
 
-# Hardware/system back: WebView history first, exit only at the root.
+# Native Chinese speech plus hardware/system back navigation.
 activities=list((app/"java").rglob("MainActivity.java"))
 if not activities:
     raise SystemExit("MainActivity.java not found")
 main=activities[0]
 s=main.read_text(encoding="utf-8")
-if "getWebView().canGoBack()" not in s:
-    s=s.replace(
-        "public class MainActivity extends BridgeActivity {}",
-        """public class MainActivity extends BridgeActivity {
+package=re.search(r'^package\s+([^;]+);',s,flags=re.M)
+if not package:
+    raise SystemExit("MainActivity package not found")
+s=f'''package {package.group(1)};
+
+import android.os.Bundle;
+import android.speech.tts.TextToSpeech;
+import android.webkit.JavascriptInterface;
+import com.getcapacitor.BridgeActivity;
+import java.util.Locale;
+
+public class MainActivity extends BridgeActivity {{
+  private TextToSpeech speech;
+  private volatile boolean speechReady = false;
+
   @Override
-  public void onBackPressed() {
-    if (getBridge() != null && getBridge().getWebView() != null && getBridge().getWebView().canGoBack()) {
-      getBridge().getWebView().goBack();
-    } else {
-      super.onBackPressed();
-    }
-  }
-}"""
-    )
-    if "getWebView().canGoBack()" not in s:
-        s=s.replace(
-          "public class MainActivity extends BridgeActivity {",
-          """public class MainActivity extends BridgeActivity {
+  public void onCreate(Bundle savedInstanceState) {{
+    super.onCreate(savedInstanceState);
+    speech = new TextToSpeech(this, status -> {{
+      if (status == TextToSpeech.SUCCESS) {{
+        int result = speech.setLanguage(Locale.SIMPLIFIED_CHINESE);
+        speechReady = result != TextToSpeech.LANG_MISSING_DATA && result != TextToSpeech.LANG_NOT_SUPPORTED;
+      }}
+    }});
+    getBridge().getWebView().addJavascriptInterface(new NativeSpeechBridge(), "NativeSpeech");
+  }}
+
+  private final class NativeSpeechBridge {{
+    @JavascriptInterface
+    public boolean speak(String text, float rate) {{
+      if (!speechReady || speech == null || text == null || text.trim().isEmpty()) return false;
+      runOnUiThread(() -> {{
+        speech.setSpeechRate(Math.max(0.35f, Math.min(rate, 1.25f)));
+        speech.speak(text, TextToSpeech.QUEUE_FLUSH, null, "chinese-study");
+      }});
+      return true;
+    }}
+  }}
+
   @Override
-  public void onBackPressed() {
-    if (getBridge() != null && getBridge().getWebView() != null && getBridge().getWebView().canGoBack()) {
+  public void onBackPressed() {{
+    if (getBridge() != null && getBridge().getWebView() != null && getBridge().getWebView().canGoBack()) {{
       getBridge().getWebView().goBack();
-    } else {
+    }} else {{
       super.onBackPressed();
-    }
-  }
-"""
-        )
+    }}
+  }}
+
+  @Override
+  protected void onDestroy() {{
+    if (speech != null) {{ speech.stop(); speech.shutdown(); }}
+    super.onDestroy();
+  }}
+}}
+'''
 main.write_text(s,encoding="utf-8")
 
-print("Android branding, splash and back navigation applied")
+print("Android branding, native speech, splash and back navigation applied")

@@ -41,6 +41,19 @@ async function finishVisibleStep(page) {
 try {
   const context = await browser.newContext();
   const page = await context.newPage();
+  await page.addInitScript(() => {
+    Object.defineProperty(window, '__spoken', { value: [], writable: true });
+    class MockUtterance { constructor(text) { this.text = text; } }
+    Object.defineProperty(window, 'SpeechSynthesisUtterance', { value: MockUtterance, configurable: true });
+    Object.defineProperty(window, 'speechSynthesis', {
+      configurable: true,
+      value: {
+        paused: false, cancel() {}, resume() {},
+        getVoices() { return [{ lang: 'zh-CN', name: 'Test Chinese' }]; },
+        speak(utterance) { window.__spoken.push(utterance.text); queueMicrotask(() => utterance.onstart?.()); },
+      },
+    });
+  });
   await page.goto(baseURL);
   await page.locator('#courseOnboarding').waitFor();
   await page.locator('#courseOnboarding [data-level="3"]').click();
@@ -55,9 +68,9 @@ try {
       ghostRadius: ghost.borderRadius,
     };
   });
-  assert.equal(homeStyles.badgeColor, 'rgb(247, 243, 235)');
-  assert.match(homeStyles.badgeBackground, /^rgba\(/);
-  assert.equal(homeStyles.ghostColor, 'rgb(247, 243, 235)');
+  assert.equal(homeStyles.badgeColor, 'rgb(37, 53, 47)');
+  assert.equal(homeStyles.badgeBackground, 'rgb(247, 243, 235)');
+  assert.equal(homeStyles.ghostColor, 'rgb(37, 53, 47)');
   assert.equal(homeStyles.ghostRadius, '12px');
   assert.equal(await page.locator('#aimFile').getAttribute('multiple'), '');
   assert.equal(await page.locator('#aimCamera').getAttribute('capture'), 'environment');
@@ -65,6 +78,9 @@ try {
   await page.locator('#continueCourse').click();
   await page.getByRole('heading', { name: 'Новая лексика', exact: true }).waitFor();
   await page.locator('#courseNext').click();
+  await page.locator('#courseAudio').click();
+  await page.waitForFunction(() => window.__spoken.length > 0);
+  assert.equal(await page.evaluate(() => window.__spoken.at(-1)), firstHsk3.contexts[0].chinese);
 
   // Deliberately choose a wrong answer and verify non-blocking feedback with pinyin.
   const wrong = page.locator('.course-option').filter({ hasNotText: firstContextWord.hanzi }).first();

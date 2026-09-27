@@ -13,6 +13,9 @@ class AndroidBundleTests(unittest.TestCase):
         config = json.loads((ROOT / "android-app" / "capacitor.config.json").read_text())
         self.assertEqual(config["webDir"], "www")
         self.assertNotIn("server", config)
+        native_customizer = (ROOT / "android-app" / "customize_android.py").read_text()
+        self.assertIn('addJavascriptInterface(new NativeSpeechBridge(), "NativeSpeech")', native_customizer)
+        self.assertIn("TextToSpeech", native_customizer)
 
     def test_offline_bundle_contains_course_assets(self):
         with tempfile.TemporaryDirectory() as folder:
@@ -26,7 +29,7 @@ class AndroidBundleTests(unittest.TestCase):
             )
             html = (output / "index.html").read_text(encoding="utf-8")
             self.assertIn("window.CHINESE_STUDY_NATIVE = true", html)
-            self.assertIn('src="curriculum-app.js?v=6.3"', html)
+            self.assertIn('src="curriculum-app.js?v=6.4"', html)
             self.assertNotIn("portal.netroman.ru", html)
             self.assertTrue((output / "ai-import.js").is_file())
             self.assertTrue((output / "curriculum-app.js").is_file())

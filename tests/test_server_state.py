@@ -69,6 +69,9 @@ class StateCompatibilityTests(unittest.TestCase):
         SERVER.APP = Path(self.tmp.name) / "app"
         payload = b"window.CHINESE_CURRICULUM = {}; // no secret here\n"
         SERVER.RELEASE_ASSET_SHA256["curriculum-app.js"] = hashlib.sha256(payload).hexdigest()
+        stale = SERVER.APP / "curriculum-app.js"
+        stale.parent.mkdir(parents=True)
+        stale.write_bytes(b"stale curriculum client" * 20)
 
         class Response(BytesIO):
             def __enter__(self): return self
@@ -79,6 +82,8 @@ class StateCompatibilityTests(unittest.TestCase):
                 target = SERVER.ensure_release_asset("/curriculum-app.js")
             self.assertIsNotNone(target)
             self.assertEqual(target.read_bytes(), payload)
+            with patch.object(SERVER.urllib.request, "urlopen", side_effect=AssertionError("fresh asset must not be downloaded again")):
+                self.assertEqual(SERVER.ensure_release_asset("/curriculum-app.js"), target)
         finally:
             SERVER.APP = old_app
             SERVER.RELEASE_ASSET_SHA256["curriculum-app.js"] = old_sha
