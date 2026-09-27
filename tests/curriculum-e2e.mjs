@@ -45,6 +45,20 @@ try {
   await page.locator('#courseOnboarding').waitFor();
   await page.locator('#courseOnboarding [data-level="3"]').click();
   await page.getByText('Продолжить обучение · HSK 3').waitFor();
+  const homeStyles = await page.locator('.course-home').evaluate(home => {
+    const badge = getComputedStyle(home.querySelector('.course-meta span'));
+    const ghost = getComputedStyle(home.querySelector('.ghost'));
+    return {
+      badgeColor: badge.color,
+      badgeBackground: badge.backgroundColor,
+      ghostColor: ghost.color,
+      ghostRadius: ghost.borderRadius,
+    };
+  });
+  assert.equal(homeStyles.badgeColor, 'rgb(247, 243, 235)');
+  assert.match(homeStyles.badgeBackground, /^rgba\(/);
+  assert.equal(homeStyles.ghostColor, 'rgb(247, 243, 235)');
+  assert.equal(homeStyles.ghostRadius, '12px');
   assert.equal(await page.locator('#aimFile').getAttribute('multiple'), '');
   assert.equal(await page.locator('#aimCamera').getAttribute('capture'), 'environment');
   assert.match(await page.locator('#view-today .mission').innerText(), /8 новых слов|7 новых слов|9 новых слов/);

@@ -1,10 +1,11 @@
 {
   "name": "chinese-study-android",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "private": true,
   "scripts": {
-    "android:add": "cap add android",
-    "android:sync": "cap sync android",
+    "web:prepare": "python3 prepare_web.py",
+    "android:add": "python3 prepare_web.py && cap add android",
+    "android:sync": "python3 prepare_web.py && cap sync android",
     "android:open": "cap open android"
   },
   "dependencies": {

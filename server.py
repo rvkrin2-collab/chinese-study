@@ -28,7 +28,7 @@ RELEASE_ASSETS = {
     "/curriculum/curriculum-v1.json": "curriculum/curriculum-v1.json",
 }
 RELEASE_ASSET_SHA256 = {
-    "curriculum-app.js": "ed360870a2ed2b59f6b16ab7b687d7b138db34bc6ff5e725842abbc77c3c8d1e",
+    "curriculum-app.js": "3aef5377af04ebbe347129f3dec7d91c61ac73a2c8d47abc6a62a5ecab3b1505",
     "curriculum/curriculum-v1.json": "fc9f1f00a094d1f1e556e6c8423198b6b9c49103ab4ae487a39873944ad59626",
 }
 
@@ -526,7 +526,7 @@ def ensure_release_asset(request_path):
     if APP not in target.parents:
         return None
     url = f"{RELEASE_ASSET_BASE}/{relative}"
-    request = urllib.request.Request(url, headers={"User-Agent": "ChineseStudy/6.2"})
+    request = urllib.request.Request(url, headers={"User-Agent": "ChineseStudy/6.3"})
     try:
         with urllib.request.urlopen(request, timeout=20) as response:
             body = response.read(4 * 1024 * 1024)
@@ -552,7 +552,7 @@ def ensure_release_asset(request_path):
 
 
 class Handler(SimpleHTTPRequestHandler):
-    server_version="ChineseStudy/6.2"
+    server_version="ChineseStudy/6.3"
     def __init__(self,*a,**kw):super().__init__(*a,directory=str(APP),**kw)
     def send_bytes(self,status,body,ctype,cache="no-store"):
         self.send_response(status);self.send_header("Content-Type",ctype);self.send_header("Content-Length",str(len(body)));self.send_header("Cache-Control",cache);self.end_headers();self.wfile.write(body)
@@ -560,7 +560,7 @@ class Handler(SimpleHTTPRequestHandler):
     def do_GET(self):
         path=self.path.split("?",1)[0]
         if path.rstrip("/")=="/api/health":
-            return self.send_json(200,{"ok":True,"version":"6.2","provider":"MiniMax","ai_configured":bool(KEY),"model":MODEL,"vision":"coding_plan/vlm","saved_material_actions":True,"curriculum":"1.1.0"})
+            return self.send_json(200,{"ok":True,"version":"6.3","provider":"MiniMax","ai_configured":bool(KEY),"model":MODEL,"vision":"coding_plan/vlm","saved_material_actions":True,"curriculum":"1.1.0"})
         if path.rstrip("/")=="/api/state":
             return self.send_json(200,read_sync_state())
         if path.rstrip("/")=="/api/library":
@@ -586,7 +586,7 @@ class Handler(SimpleHTTPRequestHandler):
                 html=re.sub(r'<script src="ai-import\.js\?v=[^"]+"></script>\s*',"",html)
                 html=re.sub(r'<script src="cloud-sync\.js\?v=[^"]+"></script>\s*',"",html)
                 html=re.sub(r'<script src="curriculum-app\.js\?v=[^"]+"></script>\s*',"",html)
-                html=html.replace("</body>",'<script src="topic-study.js?v=6.2"></script>\n<script src="ai-import.js?v=6.2"></script>\n<script src="curriculum-app.js?v=6.2"></script>\n<script src="cloud-sync.js?v=6.2"></script>\n</body>')
+                html=html.replace("</body>",'<script src="topic-study.js?v=6.3"></script>\n<script src="ai-import.js?v=6.3"></script>\n<script src="curriculum-app.js?v=6.3"></script>\n<script src="cloud-sync.js?v=6.3"></script>\n</body>')
                 return self.send_bytes(200,html.encode("utf-8"),"text/html; charset=utf-8","no-cache")
         return super().do_GET()
     def do_POST(self):
@@ -622,5 +622,5 @@ class Handler(SimpleHTTPRequestHandler):
 
 if __name__=="__main__":
     APP.mkdir(parents=True,exist_ok=True)
-    print(f"Chinese Study 6.2 + Curriculum 1.1 + MiniMax on http://{HOST}:{PORT}",flush=True)
+    print(f"Chinese Study 6.3 + Curriculum 1.1 + MiniMax on http://{HOST}:{PORT}",flush=True)
     ThreadingHTTPServer((HOST,PORT),Handler).serve_forever()

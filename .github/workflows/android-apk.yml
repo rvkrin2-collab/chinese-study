@@ -43,6 +43,9 @@ jobs:
           node --check curriculum-app.js
           python3 curriculum/validate_curriculum.py
 
+      - name: Prepare offline Android web bundle
+        run: python3 android-app/prepare_web.py
+
       - name: Test state migration and persistence
         run: python3 -m unittest discover -s tests -p 'test_*.py' -v
 
@@ -69,6 +72,17 @@ jobs:
             sleep 1
           done
           CHINESE_STUDY_TEST_URL=http://127.0.0.1:18910/ node tests/curriculum-e2e.mjs
+
+      - name: Test bundled Android client in browser
+        run: |
+          python3 -m http.server 18911 --directory android-app/www >/tmp/chinese-study-android-e2e.log 2>&1 &
+          SERVER_PID=$!
+          trap 'kill "$SERVER_PID" 2>/dev/null || true' EXIT
+          for i in {1..20}; do
+            curl -fsS http://127.0.0.1:18911/ >/dev/null && break
+            sleep 1
+          done
+          CHINESE_STUDY_TEST_URL=http://127.0.0.1:18911/ node tests/curriculum-e2e.mjs
 
       - name: Generate Android project
         working-directory: android-app
@@ -101,4 +115,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           TAG="android-v0.4.${GITHUB_RUN_NUMBER}"
-          gh release create "$TAG" dist/ChineseStudy.apk             --target "$GITHUB_SHA"             --title "Китайский Android 0.4.${GITHUB_RUN_NUMBER}"             --notes "Android 0.4: удалены шаблоны «сегодня изучаем слово» и непроверяемые свободные ответы. Упражнения используют естественные фразы и объективную проверку восстановления по пиньиню. Камера, материалы и прежний прогресс сохранены."
+          gh release create "$TAG" dist/ChineseStudy.apk \
+            --target "$GITHUB_SHA" \
+            --title "Китайский Android 0.4.${GITHUB_RUN_NUMBER}" \
+            --notes "Android 0.4: курс теперь полностью встроен в приложение и открывается без portal.netroman.ru, авторизации и сети. Исправлена контрастность плашек и кнопок на главном экране. Упражнения используют естественные фразы и объективную проверку."
