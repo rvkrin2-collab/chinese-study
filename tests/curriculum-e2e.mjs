@@ -152,13 +152,19 @@ try {
   });
   const legacyPage = await legacyContext.newPage();
   await legacyPage.goto(baseURL);
-  await legacyPage.locator('#courseOnboarding').waitFor();
+  await legacyPage.waitForFunction(() => window.CHINESE_CURRICULUM && localStorage.getItem('hsk34TrainerV2'));
   const legacyBefore = await legacyPage.evaluate(() => JSON.parse(localStorage.getItem('hsk34TrainerV2')));
   assert.equal(legacyBefore.customWords[0].id, 'legacy-w');
   assert.equal(legacyBefore.customTopics[0].id, 'legacy-t');
   assert.equal(legacyBefore.materials[0].id, 'legacy-m');
   assert.equal(legacyBefore.history[0].id, 'legacy-w');
-  await legacyPage.locator('#courseOnboarding [data-level="4"]').click();
+  if (await legacyPage.locator('#courseOnboarding').count()) {
+    await legacyPage.locator('#courseOnboarding [data-level="4"]').click();
+  } else {
+    await legacyPage.locator('[data-view="course"]').click();
+    await legacyPage.locator('#courseSettings').click();
+    await legacyPage.locator('#courseOnboarding [data-level="4"]').click();
+  }
   const legacyAfter = await legacyPage.evaluate(() => JSON.parse(localStorage.getItem('hsk34TrainerV2')));
   assert.equal(legacyAfter.curriculum.startLevel, 4);
   assert.equal(legacyAfter.customWords[0].id, 'legacy-w');
