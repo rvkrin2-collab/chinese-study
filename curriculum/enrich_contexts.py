@@ -60,6 +60,79 @@ def all_lessons(data: dict) -> list[dict]:
     ]
 
 
+def rebuild_compatibility_fields(lesson: dict) -> None:
+    """Keep pre-1.1 clients useful instead of serving carrier-sentence drills."""
+    contexts = lesson.get("contexts", [])
+    vocabulary = lesson.get("vocabulary", [])
+    if len(contexts) < 3 or not vocabulary:
+        return
+    word_by_id = {word["id"]: word for word in vocabulary}
+
+    def focus(context: dict) -> dict:
+        return word_by_id[context["focus_word_id"]]
+
+    def options(answer: str, field: str) -> list[str]:
+        values = [answer]
+        for word in vocabulary:
+            value = word.get(field)
+            if value and value not in values:
+                values.append(value)
+        return values[:4]
+
+    first, second, third = contexts
+    first_word, second_word = focus(first), focus(second)
+    lesson["examples"] = [{
+        "cn": context["chinese"],
+        "pinyin": context["pinyin"],
+        "ru": f"Ключевое слово: «{focus(context)['hanzi']}» — {focus(context)['translation_ru']}.",
+    } for context in contexts]
+    lesson["dialogue"] = {
+        "cn": f"{first['chinese']}\n{second['chinese']}",
+        "pinyin": f"{first['pinyin']}\n{second['pinyin']}",
+        "ru": "Два естественных контекста с новой лексикой урока.",
+    }
+    lesson["exercises"] = {
+        "listening": [{
+            "audio_text": first["chinese"],
+            "question_ru": "Какое новое слово прозвучало в естественной фразе?",
+            "options": options(first_word["hanzi"], "hanzi"),
+            "answer": first_word["hanzi"],
+            "pinyin": first["pinyin"],
+        }],
+        "comprehension": [{
+            "text_cn": second["chinese"], "text_pinyin": second["pinyin"],
+            "question_ru": f"Что означает «{second_word['hanzi']}» в этой фразе?",
+            "options": options(second_word["translation_ru"], "translation_ru"),
+            "answer": second_word["translation_ru"],
+        }],
+        "reading": [{
+            "text_cn": second["chinese"], "text_pinyin": second["pinyin"],
+            "question_ru": "Какое новое слово используется в контексте?",
+            "answer": second_word["hanzi"],
+        }],
+        "choice": [{
+            "question_ru": second_word["translation_ru"],
+            "options": options(second_word["hanzi"], "hanzi"),
+            "answer": second_word["hanzi"],
+        }],
+        "word_order": [{
+            "tokens": third["tokens"], "answer": third["chinese"], "pinyin": third["pinyin"],
+        }],
+        "fill_blank": [{
+            "sentence": second["chinese"].replace(second_word["hanzi"], "___", 1),
+            "answer": second_word["hanzi"], "pinyin": second["pinyin"],
+        }],
+        "translation_ru_cn": [{
+            "prompt_ru": second_word["translation_ru"],
+            "answers": [second_word["hanzi"]], "pinyin": second_word["pinyin"],
+        }],
+        "active_answer": [{
+            "prompt_ru": f"Восстановите китайскую фразу по пиньиню: {first['pinyin']}",
+            "sample_cn": first["chinese"], "sample_pinyin": first["pinyin"],
+        }],
+    }
+
+
 def enrich(data: dict, sentences: list[dict], source_commit: str) -> dict:
     index: dict[str, list[dict]] = defaultdict(list)
     for sentence in sentences:
@@ -95,6 +168,29 @@ def enrich(data: dict, sentences: list[dict], source_commit: str) -> dict:
             )
 
         candidates = sorted(candidate_by_id.values(), key=rank, reverse=True)
+
+        for word in vocabulary:
+            example_pool = index.get(word["hanzi"], []) or [
+                sentence for sentence in sentences if word["hanzi"] in sentence.get("chinese", "")
+            ]
+            graded_examples = [
+                sentence for sentence in example_pool
+                if int(sentence.get("hsk_level", 99)) <= int(lesson["hsk_level"])
+            ]
+            examples = graded_examples or list(example_pool)
+            if not examples:
+                word["example"] = {
+                    "cn": word["hanzi"], "pinyin": word["pinyin"], "ru": word["translation_ru"],
+                }
+                continue
+            example = sorted(examples, key=rank, reverse=True)[0]
+            word["example"] = {
+                "cn": example["chinese"],
+                "pinyin": example["pinyin"],
+                "ru": f"Контекст употребления: «{word['hanzi']}» — {word['translation_ru']}.",
+                "source_sentence_id": example["id"],
+            }
+
         chosen: list[tuple[dict, str]] = []
         used_focus: set[str] = set()
         used_chinese: set[str] = set()
@@ -139,6 +235,7 @@ def enrich(data: dict, sentences: list[dict], source_commit: str) -> dict:
             selected_source_ids.add(sentence["id"])
         lesson["exercise_version"] = 2
         lesson["contexts"] = contexts
+        rebuild_compatibility_fields(lesson)
 
     for lesson in all_lessons(data):
         lesson["exercise_version"] = 2

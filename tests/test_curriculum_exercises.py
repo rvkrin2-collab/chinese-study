@@ -9,7 +9,8 @@ ROOT = Path(__file__).resolve().parents[1]
 class CurriculumExerciseTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.data = json.loads((ROOT / "curriculum" / "curriculum-v1.json").read_text(encoding="utf-8"))
+        cls.raw = (ROOT / "curriculum" / "curriculum-v1.json").read_text(encoding="utf-8")
+        cls.data = json.loads(cls.raw)
         cls.lessons = [
             lesson
             for level in cls.data["levels"]
@@ -44,6 +45,17 @@ class CurriculumExerciseTests(unittest.TestCase):
         self.assertEqual(self.data["exercise_version"], 2)
         self.assertEqual(source["license"], "CC-BY-SA-4.0")
         self.assertRegex(source["commit"], r"^[0-9a-f]{40}$")
+
+    def test_no_carrier_sentences_or_unchecked_freeform_tasks_remain(self):
+        self.assertNotIn("今天我们学习", self.raw)
+        self.assertNotIn("今天学什么", self.raw)
+        self.assertNotIn("Составьте короткую фразу", self.raw)
+        examples = [word["example"] for lesson in self.lessons for word in lesson["vocabulary"]]
+        self.assertGreaterEqual(sum("source_sentence_id" in item for item in examples), 1170)
+        client = (ROOT / "curriculum-app.js").read_text(encoding="utf-8")
+        self.assertNotIn("Получилось передать мысль", client)
+        self.assertNotIn("Нужно повторить</button>", client)
+        self.assertIn("Восстановите фразу по пиньиню", client)
 
 
 if __name__ == "__main__":

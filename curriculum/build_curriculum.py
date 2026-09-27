@@ -245,13 +245,8 @@ def clean_translation(word: dict) -> str:
 
 def example_for(word: dict) -> dict:
     h, p, tr = word["hanzi"], PINYIN_CORRECTIONS.get(word["hanzi"], word["pinyin"]), clean_translation(word)
-    # The neutral carrier sentence remains valid for every part of speech and
-    # avoids publishing fabricated semantic claims for polysemous words.
-    return {
-        "cn": f"今天我们学习“{h}”这个词。",
-        "pinyin": f"Jīntiān wǒmen xuéxí “{p}” zhège cí.",
-        "ru": f"Сегодня мы изучаем слово «{h}» — {tr}.",
-    }
+    # Natural examples replace this lexical fallback during the enrichment pass.
+    return {"cn": h, "pinyin": p, "ru": tr}
 
 
 def load_order(csv_dir: Path, level: int) -> dict[str, float]:

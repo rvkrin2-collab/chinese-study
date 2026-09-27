@@ -61,8 +61,13 @@ try {
   assert.equal(await page.locator('#courseNext').count(), 1, 'wrong answer must allow continuing');
   await page.locator('#courseNext').click();
 
-  for (let i = 0; i < 40 && !(await page.locator('.course-summary').count()); i++) await finishVisibleStep(page);
+  let sawCheckedProduction = false;
+  for (let i = 0; i < 40 && !(await page.locator('.course-summary').count()); i++) {
+    if (await page.getByRole('heading', { name: 'Восстановите фразу по пиньиню', exact: true }).count()) sawCheckedProduction = true;
+    await finishVisibleStep(page);
+  }
   await page.locator('.course-summary').waitFor();
+  assert.ok(sawCheckedProduction, 'lesson must use checked phrase production instead of an ungraded free response');
   assert.match(await page.locator('.course-summary').innerText(), /На повторение поставлены|по расписанию/);
   const stateAfterLesson = await page.evaluate(() => JSON.parse(localStorage.getItem('hsk34TrainerV2')));
   assert.ok(stateAfterLesson.curriculum.completed[firstHsk3.id]);

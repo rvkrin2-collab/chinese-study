@@ -1,6 +1,7 @@
 (() => {
   'use strict';
-  const CURRICULUM_URL = 'curriculum/curriculum-v1.json?v=1.1.0';
+  const CLIENT_VERSION = '6.2';
+  const CURRICULUM_URL = 'curriculum/curriculum-v1.json?v=1.1.1';
   const DAY = 86400000;
   let curriculum = null;
   let levels = [];
@@ -235,7 +236,7 @@
         { type: 'context-order', context: third, word: contextWord(third), skill: 'word_order' },
         { type: 'context-cloze', context: second, word: contextWord(second), skill: 'fill_blank' },
         { type: 'context-translation', context: third, word: contextWord(third), skill: 'translation' },
-        { type: 'context-active', context: first, word: contextWord(first), skill: 'active_speech' },
+        { type: 'context-production', context: first, word: contextWord(first), skill: 'active_speech' },
       ].filter(step => !Object.values(step).some(value => value === undefined));
     }
     const ex = lesson.exercises || {};
@@ -268,7 +269,7 @@
         { type: 'grammar-review', grammar: grammars[0], skill: 'grammar', review: true },
         { type: 'context-reading', context: second, word: contextWord(second), skill: 'reading', review: true },
         { type: 'context-order', context: third, word: contextWord(third), skill: 'word_order', review: true },
-        { type: 'context-active', context: first, word, skill: 'active_speech', review: true },
+        { type: 'context-production', context: first, word, skill: 'active_speech', review: true },
       ].filter(step => !('word' in step) || step.word).filter(step => !('grammar' in step) || step.grammar);
     }
     return [
@@ -294,7 +295,7 @@
       active: renderActive, 'grammar-review': renderGrammarReview,
       'context-listening': renderContextListening, 'context-reading': renderContextReading,
       'context-order': renderContextOrder, 'context-cloze': renderContextCloze,
-      'context-translation': renderContextTranslation, 'context-active': renderContextActive,
+      'context-translation': renderContextTranslation, 'context-production': renderContextProduction,
       'grammar-use': renderGrammarUse,
     };
     (renderers[step.type] || renderUnsupported)(content, step);
@@ -473,18 +474,16 @@
     };
   }
 
-  function renderContextActive(content, step) {
+  function renderContextProduction(content, step) {
     const { context, word } = step;
-    content.innerHTML = `<div class="course-skill">Активная речь</div><h2>Скажите свою мысль со словом «${esc(word.hanzi)}»</h2><p>Напишите короткую фразу. Не копируйте образец — сначала сформулируйте самостоятельно.</p><textarea class="course-input" id="courseInput" rows="3" lang="zh" placeholder="Ваша фраза"></textarea><button class="course-next" id="courseReveal">Сравнить с живым примером</button><div id="courseFeedback"></div>`;
-    document.getElementById('courseReveal').onclick = () => {
+    content.innerHTML = `<div class="course-skill">Воспроизведение</div><h2>Восстановите фразу по пиньиню</h2><div class="course-pinyin" style="font-size:20px;line-height:1.6">${esc(context.pinyin)}</div><div class="course-hint">Ключевое слово: ${esc(word.translation_ru)} → ${esc(word.hanzi)}</div><p>Напишите всю фразу иероглифами. Знаки препинания можно не ставить.</p><button class="course-audio" id="courseAudio">▶ Прослушать</button><textarea class="course-input" id="courseInput" rows="3" lang="zh" autocomplete="off" placeholder="Восстановите китайскую фразу"></textarea><button class="course-next" id="courseCheck">Проверить</button><div id="courseFeedback"></div>`;
+    document.getElementById('courseAudio').onclick = () => speak(context.chinese, .78);
+    document.getElementById('courseCheck').onclick = () => {
       const value = document.getElementById('courseInput').value.trim();
-      document.getElementById('courseReveal').disabled = true;
-      document.getElementById('courseFeedback').innerHTML = `<div class="course-feedback ${value ? 'ok' : 'bad'}"><b>${value ? 'Сравните смысл и порядок слов' : 'Сначала стоит попробовать самому'}</b><div class="course-context">${contextText(context, 'highlight')}</div><div class="course-pinyin">${esc(context.pinyin)}</div><div class="course-self-options"><button class="course-self-option" data-self="good">Получилось передать мысль</button><button class="course-self-option" data-self="retry">Нужно повторить</button></div></div>`;
-      content.querySelectorAll('[data-self]').forEach(button => button.onclick = () => {
-        const ok = button.dataset.self === 'good' && Boolean(value); recordStepResult(step, ok);
-        content.querySelectorAll('[data-self]').forEach(item => item.disabled = true);
-        document.getElementById('courseFeedback').insertAdjacentHTML('beforeend', nextButton()); wireNext();
-      });
+      const ok = norm(value) === norm(context.chinese); recordStepResult(step, ok);
+      document.getElementById('courseCheck').disabled = true;
+      document.getElementById('courseFeedback').innerHTML = `<div class="course-feedback ${ok ? 'ok' : 'bad'}"><b>${ok ? 'Фраза восстановлена' : 'Сверьте ответ с исходной фразой'}</b>${!ok && value ? `<div>Ваш ответ: ${esc(value)}</div>` : ''}<div class="course-context">${contextText(context, 'highlight')}</div><div class="course-pinyin">${esc(context.pinyin)}</div>${!ok ? '<small>Проверьте служебные слова и порядок частей предложения. Это задание вернётся ещё раз.</small>' : ''}</div>${nextButton()}`;
+      wireNext();
     };
   }
 
@@ -524,8 +523,14 @@
 
   function renderActive(content, step) {
     const item = step.item;
-    content.innerHTML = `<div class="tiny">Активный ответ</div><h2>${esc(item.prompt_ru)}</h2><textarea class="course-input" id="courseInput" rows="3" lang="zh"></textarea><button class="course-next" id="courseReveal">Показать пример</button><div id="courseFeedback"></div>`;
-    document.getElementById('courseReveal').onclick = () => { markResult(Boolean(document.getElementById('courseInput').value.trim())); document.getElementById('courseFeedback').innerHTML = `<div class="course-feedback ok"><b>Пример</b><div>${esc(item.sample_cn)}</div><div class="course-pinyin">${esc(item.sample_pinyin)}</div></div>${nextButton()}`; wireNext(); };
+    content.innerHTML = `<div class="course-skill">Воспроизведение</div><h2>${esc(item.prompt_ru)}</h2><textarea class="course-input" id="courseInput" rows="3" lang="zh" autocomplete="off" placeholder="Напишите фразу иероглифами"></textarea><button class="course-next" id="courseCheck">Проверить</button><div id="courseFeedback"></div>`;
+    document.getElementById('courseCheck').onclick = () => {
+      const value = document.getElementById('courseInput').value.trim();
+      const ok = norm(value) === norm(item.sample_cn); markResult(ok, 'active_speech');
+      document.getElementById('courseCheck').disabled = true;
+      document.getElementById('courseFeedback').innerHTML = `<div class="course-feedback ${ok ? 'ok' : 'bad'}"><b>${ok ? 'Фраза восстановлена' : 'Ответ не совпал'}</b>${!ok && value ? `<div>Ваш ответ: ${esc(value)}</div>` : ''}<div class="course-context">${esc(item.sample_cn)}</div><div class="course-pinyin">${esc(item.sample_pinyin)}</div></div>${nextButton()}`;
+      wireNext();
+    };
   }
 
   function renderGrammarReview(content, step) {
@@ -584,7 +589,7 @@
       if (following) course.currentByLevel[String(active.hsk_level)] = following.id;
     }
     persistCourse();
-    const skillLabels = { recognition: 'узнавание', listening: 'аудирование', grammar: 'грамматика', reading: 'чтение', word_order: 'порядок слов', fill_blank: 'пропуски', translation: 'перевод', active_speech: 'активная речь' };
+    const skillLabels = { recognition: 'узнавание', listening: 'аудирование', grammar: 'грамматика', reading: 'чтение', word_order: 'порядок слов', fill_blank: 'пропуски', translation: 'перевод', active_speech: 'воспроизведение фразы' };
     const weak = Object.entries(activeStats.skills)
       .filter(([, item]) => item.total && item.correct / item.total < .6)
       .map(([skill]) => skillLabels[skill] || skill);
@@ -625,7 +630,7 @@
         { type: 'grammar-review', grammar, skill: 'grammar', review: true },
         { type: 'context-reading', context: second, word: contextWord(second), skill: 'reading', review: true },
         { type: 'context-order', context: third, word: contextWord(third), skill: 'word_order', review: true },
-        { type: 'context-active', context: first, word: contextWord(first), skill: 'active_speech', review: true },
+        { type: 'context-production', context: first, word: contextWord(first), skill: 'active_speech', review: true },
       ].filter(step => !('word' in step) || step.word);
     } else {
       activeSteps = [
@@ -700,8 +705,21 @@
     }).observe(preview, { childList: true });
   }
 
+  async function checkClientVersion() {
+    try {
+      const response = await fetch('api/health', { cache: 'no-store' });
+      const health = response.ok ? await response.json() : null;
+      if (!health?.version || health.version === CLIENT_VERSION || document.getElementById('courseUpdateNotice')) return;
+      const notice = document.createElement('div'); notice.id = 'courseUpdateNotice';
+      notice.style.cssText = 'position:fixed;left:12px;right:12px;bottom:12px;z-index:13000;padding:13px 16px;border-radius:13px;background:#25322d;color:#fff;display:flex;gap:12px;align-items:center;justify-content:space-between;box-shadow:0 12px 35px #0006';
+      notice.innerHTML = '<b>Доступна новая версия упражнений</b><button style="padding:9px 13px;border:0;border-radius:9px;font-weight:800;cursor:pointer">Обновить</button>';
+      notice.querySelector('button').onclick = () => location.reload(); document.body.appendChild(notice);
+    } catch (_) {}
+  }
+
   async function boot() {
     try {
+      window.CHINESE_CURRICULUM_CLIENT_VERSION = CLIENT_VERSION;
       const response = await fetch(CURRICULUM_URL, { cache: 'no-store' });
       if (!response.ok) throw new Error(`Curriculum ${response.status}`);
       indexCurriculum(await response.json());
@@ -709,6 +727,7 @@
       const originalRenderToday = window.renderToday;
       if (typeof originalRenderToday === 'function') window.renderToday = function () { originalRenderToday(); renderCourseHome(); };
       renderAllViews(); watchMaterialPreview();
+      checkClientVersion(); setInterval(checkClientVersion, 5 * 60 * 1000);
       if (!ensureCourseState().startLevel) showOnboarding(false);
     } catch (error) {
       console.error('Curriculum load failed', error);
