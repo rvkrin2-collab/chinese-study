@@ -27,11 +27,16 @@ class CurriculumExerciseTests(unittest.TestCase):
             self.assertEqual(len({item["focus_word_id"] for item in contexts}), 3, lesson["id"])
             vocabulary_ids = {word["id"] for word in lesson["vocabulary"]}
             self.assertTrue({item["focus_word_id"] for item in contexts} <= vocabulary_ids)
+            for context in contexts:
+                self.assertEqual(
+                    len(set(context.get("lesson_word_ids", []))), 1,
+                    f"{lesson['id']}: listening prompt has more than one new lesson word",
+                )
 
     def test_contexts_are_natural_source_material_not_carrier_templates(self):
         contexts = [item for lesson in self.lessons for item in lesson["contexts"]]
         self.assertEqual(len(contexts), 447)
-        self.assertGreaterEqual(len({item["source_sentence_id"] for item in contexts}), 390)
+        self.assertGreaterEqual(len({item["source_sentence_id"] for item in contexts}), 380)
         for item in contexts:
             self.assertNotIn("今天我们学习", item["chinese"])
             self.assertNotIn("今天学什么", item["chinese"])
@@ -41,8 +46,8 @@ class CurriculumExerciseTests(unittest.TestCase):
 
     def test_context_provenance_is_pinned(self):
         source = self.data["context_source"]
-        self.assertEqual(self.data["version"], "1.1.0")
-        self.assertEqual(self.data["exercise_version"], 2)
+        self.assertEqual(self.data["version"], "1.2.0")
+        self.assertEqual(self.data["exercise_version"], 3)
         self.assertEqual(source["license"], "CC-BY-SA-4.0")
         self.assertRegex(source["commit"], r"^[0-9a-f]{40}$")
 

@@ -37,8 +37,8 @@ def flatten(data: dict) -> tuple[list[dict], list[dict], list[dict]]:
 def validate(data: dict) -> dict:
     errors, warnings = [], []
     units, lessons, words = flatten(data)
-    if data.get("version") != "1.1.0" or data.get("exercise_version") != 2:
-        errors.append("Ожидается Curriculum 1.1.0 с exercise_version=2")
+    if data.get("version") != "1.2.0" or data.get("exercise_version") != 3:
+        errors.append("Ожидается Curriculum 1.2.0 с exercise_version=3")
     context_source = data.get("context_source", {})
     if context_source.get("license") != "CC-BY-SA-4.0" or not context_source.get("commit"):
         errors.append("Нет закреплённого источника и лицензии естественных контекстов")
@@ -105,6 +105,12 @@ def validate(data: dict) -> dict:
                 errors.append(f"{lesson.get('id')}: контекст проверяет слово не из урока")
             if context["focus_hanzi"] not in context["chinese"]:
                 errors.append(f"{lesson.get('id')}: фокусное слово отсутствует в контексте")
+            lesson_words_in_context = set(context.get("lesson_word_ids", []))
+            if lesson.get("type") == "lesson" and len(lesson_words_in_context) != 1:
+                errors.append(
+                    f"{lesson.get('id')}: аудирование неоднозначно — в контексте "
+                    f"{len(lesson_words_in_context)} новых слов вместо одного"
+                )
             normalized_text = re.sub(r"[\s，。！？、,.!?“”\"'’]", "", context["chinese"])
             normalized_tokens = re.sub(r"[\s，。！？、,.!?“”\"'’]", "", "".join(context["tokens"]))
             if normalized_tokens != normalized_text:

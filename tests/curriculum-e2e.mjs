@@ -13,7 +13,6 @@ const baseURL = process.env.CHINESE_STUDY_TEST_URL || 'http://127.0.0.1:18910/';
 const data = JSON.parse(fs.readFileSync(new URL('../curriculum/curriculum-v1.json', import.meta.url), 'utf8'));
 const firstHsk3 = data.levels.find(x => x.hsk_level === 3).units[0].lessons[0];
 const firstWord = firstHsk3.vocabulary[0];
-const firstContextWord = firstHsk3.vocabulary.find(word => word.id === firstHsk3.contexts[0].focus_word_id);
 const browser = await chromium.launch({ headless: true });
 
 async function finishVisibleStep(page) {
@@ -30,7 +29,11 @@ async function finishVisibleStep(page) {
     await check.click(); return true;
   }
   const options = page.locator('.course-option:not([disabled])');
-  if (await options.count()) { await options.first().click(); return true; }
+  if (await options.count()) {
+    await options.first().click();
+    assert.equal(await page.locator('.course-option.correct').count(), 1, 'every choice screen must contain exactly one selectable correct answer');
+    return true;
+  }
   const self = page.locator('[data-self]:not([disabled])');
   if (await self.count()) { await self.first().click(); return true; }
   const reveal = page.locator('#courseReveal');
@@ -79,25 +82,29 @@ try {
   await page.getByRole('heading', { name: 'Новая лексика', exact: true }).waitFor();
   await page.locator('#courseNext').click();
 
-  // Deliberately choose a wrong answer and verify non-blocking feedback with pinyin.
-  const wrong = page.locator('.course-option').filter({ hasNotText: firstContextWord.hanzi }).first();
+  // Deliberately choose a wrong answer and verify that the correct option was
+  // not lost when the randomized list was limited to four choices.
+  assert.equal(await page.locator('.course-option').filter({ hasText: firstWord.hanzi }).count(), 1);
+  const wrong = page.locator('.course-option').filter({ hasNotText: firstWord.hanzi }).first();
   await wrong.click();
   const feedback = page.locator('#courseFeedback');
   assert.match(await feedback.innerText(), /Ошибка/);
-  assert.ok((await feedback.innerText()).includes(firstContextWord.pinyin), 'wrong-answer feedback must include pinyin');
+  assert.ok((await feedback.innerText()).includes(firstWord.pinyin), 'wrong-answer feedback must include pinyin');
+  assert.equal(await page.locator('.course-option.correct').count(), 1);
   assert.equal(await page.locator('#courseNext').count(), 1, 'wrong answer must allow continuing');
-  await page.locator('#courseNext').click();
-  await page.getByRole('heading', { name: 'Какое новое слово прозвучало в фразе?', exact: true }).waitFor();
-  await page.locator('#courseAudio').click();
-  await page.waitForFunction(() => window.__spoken.length > 0);
-  assert.equal(await page.evaluate(() => window.__spoken.at(-1)), firstHsk3.contexts[0].chinese);
 
-  let sawCheckedProduction = false;
+  let sawCheckedProduction = false, sawContextListening = false;
   for (let i = 0; i < 40 && !(await page.locator('.course-summary').count()); i++) {
     if (await page.getByRole('heading', { name: 'Восстановите фразу по пиньиню', exact: true }).count()) sawCheckedProduction = true;
+    if (await page.getByRole('heading', { name: 'Какое из предложенных слов прозвучало?', exact: true }).count()) {
+      sawContextListening = true;
+      await page.locator('#courseAudio').click();
+      await page.waitForFunction(expected => window.__spoken.at(-1) === expected, firstHsk3.contexts[0].chinese);
+    }
     await finishVisibleStep(page);
   }
   await page.locator('.course-summary').waitFor();
+  assert.ok(sawContextListening, 'lesson must include sentence listening with an unambiguous target word');
   assert.ok(sawCheckedProduction, 'lesson must use checked phrase production instead of an ungraded free response');
   assert.match(await page.locator('.course-summary').innerText(), /На повторение поставлены|по расписанию/);
   const stateAfterLesson = await page.evaluate(() => JSON.parse(localStorage.getItem('hsk34TrainerV2')));

@@ -43,12 +43,12 @@ class AndroidBundleTests(unittest.TestCase):
             )
             html = (output / "index.html").read_text(encoding="utf-8")
             self.assertIn("window.CHINESE_STUDY_NATIVE = true", html)
-            self.assertIn('src="curriculum-app.js?v=6.4"', html)
+            self.assertIn('src="curriculum-app.js?v=6.5"', html)
             self.assertNotIn("portal.netroman.ru", html)
             self.assertTrue((output / "ai-import.js").is_file())
             self.assertTrue((output / "curriculum-app.js").is_file())
             curriculum = json.loads((output / "curriculum" / "curriculum-v1.json").read_text())
-            self.assertEqual(curriculum["version"], "1.1.0")
+            self.assertEqual(curriculum["version"], "1.2.0")
 
 
 if __name__ == "__main__":

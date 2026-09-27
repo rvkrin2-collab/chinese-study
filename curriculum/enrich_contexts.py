@@ -17,6 +17,10 @@ SOURCE_NAME = "no7z/hsk-sentences-audio"
 SOURCE_REPOSITORY = "https://github.com/no7z/hsk-sentences-audio"
 SOURCE_LICENSE = "CC-BY-SA-4.0"
 
+PINYIN_OVERRIDES = {
+    "hsk3-0545": "tā zhǐ zhe dì tú gěi wǒ kàn",
+}
+
 PREFERRED_TOPICS = {
     "h1-u1": {"greetings", "identity"},
     "h1-u2": {"family", "numbers"},
@@ -159,8 +163,9 @@ def enrich(data: dict, sentences: list[dict], source_commit: str) -> dict:
             covered = lesson_words & token_set
             unknown = token_set - cumulative_words
             return (
-                len(covered),
+                int(len(covered) == 1),
                 int(sentence.get("topic") in preferred),
+                -abs(len(covered) - 1),
                 -len(unknown),
                 -abs(len(tokens) - 7),
                 -len(sentence.get("chinese", "")),
@@ -186,7 +191,7 @@ def enrich(data: dict, sentences: list[dict], source_commit: str) -> dict:
             example = sorted(examples, key=rank, reverse=True)[0]
             word["example"] = {
                 "cn": example["chinese"],
-                "pinyin": example["pinyin"],
+                "pinyin": PINYIN_OVERRIDES.get(example["id"], example["pinyin"]),
                 "ru": f"Контекст употребления: «{word['hanzi']}» — {word['translation_ru']}.",
                 "source_sentence_id": example["id"],
             }
@@ -222,7 +227,7 @@ def enrich(data: dict, sentences: list[dict], source_commit: str) -> dict:
             contexts.append({
                 "source_sentence_id": sentence["id"],
                 "chinese": sentence["chinese"],
-                "pinyin": sentence["pinyin"],
+                "pinyin": PINYIN_OVERRIDES.get(sentence["id"], sentence["pinyin"]),
                 "sentence_type": sentence.get("sentence_type", "statement"),
                 "topic": sentence.get("topic", "misc"),
                 "tokens": tokens,
@@ -233,15 +238,15 @@ def enrich(data: dict, sentences: list[dict], source_commit: str) -> dict:
                 "lesson_word_ids": [word_by_hanzi[token]["id"] for token in tokens if token in word_by_hanzi],
             })
             selected_source_ids.add(sentence["id"])
-        lesson["exercise_version"] = 2
+        lesson["exercise_version"] = 3
         lesson["contexts"] = contexts
         rebuild_compatibility_fields(lesson)
 
     for lesson in all_lessons(data):
-        lesson["exercise_version"] = 2
+        lesson["exercise_version"] = 3
 
-    data["version"] = "1.1.0"
-    data["exercise_version"] = 2
+    data["version"] = "1.2.0"
+    data["exercise_version"] = 3
     data["context_source"] = {
         "name": SOURCE_NAME,
         "repository": SOURCE_REPOSITORY,

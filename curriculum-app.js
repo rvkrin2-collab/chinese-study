@@ -1,7 +1,7 @@
 (() => {
   'use strict';
-  const CLIENT_VERSION = '6.4';
-  const CURRICULUM_URL = 'curriculum/curriculum-v1.json?v=1.1.1';
+  const CLIENT_VERSION = '6.5';
+  const CURRICULUM_URL = 'curriculum/curriculum-v1.json?v=1.2.0';
   const DAY = 86400000;
   let curriculum = null;
   let levels = [];
@@ -200,16 +200,26 @@
     if (goBack && history.state?.courseLesson) history.back();
   }
 
-  function wordOptions(word, field = 'translation_ru') {
-    const same = [...wordById.values()].filter(x => x.id !== word.id && x[field] && x[field] !== word[field]);
-    return shuffled(unique([word[field], ...shuffled(same).slice(0, 3).map(x => x[field])])).slice(0, 4);
+  function answerOptions(answer, distractors, limit = 4) {
+    const alternatives = shuffled(unique(distractors).filter(value => value && value !== answer)).slice(0, Math.max(0, limit - 1));
+    return shuffled([answer, ...alternatives]);
   }
 
-  function lessonWordOptions(word, field = 'translation_ru') {
-    const local = (active?.vocabulary || []).filter(x => x.id !== word.id && x[field] && x[field] !== word[field]);
+  function wordOptions(word, field = 'translation_ru', excluded = []) {
+    const blocked = new Set(excluded);
+    const same = [...wordById.values()]
+      .filter(x => x.id !== word.id && (field !== 'translation_ru' || x.hanzi !== word.hanzi) && x[field] && x[field] !== word[field] && !blocked.has(x[field]))
+      .map(x => x[field]);
+    return answerOptions(word[field], same);
+  }
+
+  function lessonWordOptions(word, field = 'translation_ru', excluded = []) {
+    const blocked = new Set(excluded);
+    const usable = x => x.id !== word.id && (field !== 'translation_ru' || x.hanzi !== word.hanzi) && x[field] && x[field] !== word[field] && !blocked.has(x[field]);
+    const local = (active?.vocabulary || []).filter(usable).map(x => x[field]);
     const sameLevel = lessons.filter(x => x.hsk_level === active?.hsk_level).flatMap(x => x.vocabulary || [])
-      .filter(x => x.id !== word.id && x[field] && x[field] !== word[field]);
-    return shuffled(unique([word[field], ...shuffled(local).map(x => x[field]), ...shuffled(sameLevel).map(x => x[field])])).slice(0, 4);
+      .filter(usable).map(x => x[field]);
+    return answerOptions(word[field], [...shuffled(local), ...shuffled(sameLevel)]);
   }
 
   function contextWord(context) { return wordById.get(String(context?.focus_word_id)); }
@@ -226,16 +236,24 @@
     const contexts = lesson.contexts || [];
     if (contexts.length >= 3) {
       const [first, second, third] = contexts;
+      const contextsByWord = new Map(contexts.map(context => [String(context.focus_word_id), context]));
+      const drills = words.map((word, index) => {
+        const context = contextsByWord.get(String(word.id));
+        if (context === first) return { type: 'context-listening', context, word, skill: 'listening' };
+        if (context === second) return { type: 'context-reading', context, word, skill: 'reading' };
+        if (context === third) return { type: 'context-cloze', context, word, skill: 'fill_blank' };
+        if (index % 3 === 0) return { type: 'listening-word', word, skill: 'listening' };
+        if (index % 2 === 0) return { type: 'ru-hanzi', word, skill: 'recognition' };
+        return { type: 'hanzi-ru', word, skill: 'recognition' };
+      });
+      const split = Math.min(4, drills.length);
       return [
         { type: 'intro', words },
-        { type: 'ru-hanzi', word: contextWord(first), skill: 'recognition' },
-        { type: 'context-listening', context: first, word: contextWord(first), skill: 'listening' },
+        ...drills.slice(0, split),
         { type: 'grammar', grammar: lesson.grammar },
         { type: 'grammar-use', grammar: lesson.grammar, skill: 'grammar' },
-        { type: 'context-reading', context: second, word: contextWord(second), skill: 'reading' },
+        ...drills.slice(split),
         { type: 'context-order', context: third, word: contextWord(third), skill: 'word_order' },
-        { type: 'context-cloze', context: second, word: contextWord(second), skill: 'fill_blank' },
-        { type: 'context-translation', context: third, word: contextWord(third), skill: 'translation' },
         { type: 'context-production', context: first, word: contextWord(first), skill: 'active_speech' },
       ].filter(step => !Object.values(step).some(value => value === undefined));
     }
@@ -344,11 +362,12 @@
 
   function renderRuHanzi(content, step) {
     const options = lessonWordOptions(step.word, 'hanzi');
-    renderOptions(content, `<div class="course-skill">Узнавание</div><h2>${esc(step.word.translation_ru)}</h2><p>Выберите слово, которое передаёт этот смысл.</p>`, options, step.word.hanzi, step.word, '', step);
+    renderOptions(content, `<div class="course-skill">Узнавание</div><h2>${esc(step.word.translation_ru)}</h2><div class="course-pinyin">${esc(step.word.pinyin)}</div><p>Выберите иероглифическую запись этого слова.</p>`, options, step.word.hanzi, step.word, '', step);
   }
 
   function renderOptions(content, questionHtml, options, answer, word, explanation = '', step = null) {
-    content.innerHTML = `${questionHtml}<div class="course-options">${options.map(value => `<button class="course-option" data-value="${esc(value)}">${esc(value)}</button>`).join('')}</div><div id="courseFeedback"></div>`;
+    const safeOptions = answerOptions(String(answer), options);
+    content.innerHTML = `${questionHtml}<div class="course-options">${safeOptions.map(value => `<button class="course-option" data-value="${esc(value)}">${esc(value)}</button>`).join('')}</div><div id="courseFeedback"></div>`;
     content.querySelectorAll('.course-option').forEach(button => button.onclick = () => {
       const ok = button.dataset.value === String(answer); if (step) recordStepResult(step, ok); else markResult(ok);
       content.querySelectorAll('.course-option').forEach(item => { item.disabled = true; if (item.dataset.value === String(answer)) item.classList.add('correct'); });
@@ -376,7 +395,7 @@
     content.innerHTML = `<div class="tiny">Повторение · аудирование</div><h2>Какое слово прозвучало?</h2><button class="course-audio" id="courseAudio">▶ Прослушать</button><div class="course-options">${options.map(x => `<button class="course-option" data-value="${esc(x)}">${esc(x)}</button>`).join('')}</div><div id="courseFeedback"></div>`;
     document.getElementById('courseAudio').onclick = () => speak(step.word.hanzi);
     content.querySelectorAll('.course-option').forEach(button => button.onclick = () => {
-      const ok = button.dataset.value === step.word.hanzi; markResult(ok); gradeRuntimeWord(step.word, ok);
+      const ok = button.dataset.value === step.word.hanzi; recordStepResult(step, ok); if (step.review) gradeRuntimeWord(step.word, ok);
       content.querySelectorAll('.course-option').forEach(x => { x.disabled = true; if (x.dataset.value === step.word.hanzi) x.classList.add('correct'); }); if (!ok) button.classList.add('wrong');
       const chosen = [...wordById.values()].find(x => x.hanzi === button.dataset.value);
       document.getElementById('courseFeedback').innerHTML = `<div class="course-feedback ${ok ? 'ok' : 'bad'}"><b>${ok ? 'Верно' : 'Ошибка'}</b>${!ok && chosen ? `<div>Вы выбрали: ${esc(chosen.hanzi)} · <span class="course-pinyin">${esc(chosen.pinyin)}</span></div>` : ''}<div>Правильно: ${esc(step.word.hanzi)} · <span class="course-pinyin">${esc(step.word.pinyin)}</span></div></div>${nextButton()}`; wireNext();
@@ -401,15 +420,21 @@
     const text = String(context?.chinese || '');
     const focus = String(context?.focus_hanzi || '');
     if (!focus || !text.includes(focus)) return esc(text);
-    if (mode === 'blank') return text.split(focus).map(esc).join('<b class="focus">＿＿</b>');
+    if (mode === 'blank') {
+      const index = text.indexOf(focus);
+      return `${esc(text.slice(0, index))}<b class="focus">＿＿</b>${esc(text.slice(index + focus.length))}`;
+    }
     if (mode === 'highlight') return text.split(focus).map(esc).join(`<span class="focus">${esc(focus)}</span>`);
     return esc(text);
   }
 
   function renderContextListening(content, step) {
     const { context, word } = step;
-    const options = lessonWordOptions(word, 'hanzi');
-    content.innerHTML = `<div class="course-skill">Аудирование</div><h2>Какое новое слово прозвучало в фразе?</h2><p>Сначала слушайте без текста. Фразу можно повторить медленнее.</p><div class="course-answer-actions"><button class="course-audio" id="courseAudio">▶ Обычная скорость</button><button class="course-audio" id="courseAudioSlow">▶ Медленно</button></div><div class="course-options">${options.map(value => `<button class="course-option" data-value="${esc(value)}">${esc(value)}</button>`).join('')}</div><div id="courseFeedback"></div>`;
+    const otherWordsInSentence = (active?.vocabulary || [])
+      .filter(item => item.id !== word.id && context.chinese.includes(item.hanzi))
+      .map(item => item.hanzi);
+    const options = lessonWordOptions(word, 'hanzi', otherWordsInSentence);
+    content.innerHTML = `<div class="course-skill">Аудирование</div><h2>Какое из предложенных слов прозвучало?</h2><p>Сначала слушайте без текста. Фразу можно повторить медленнее.</p><div class="course-answer-actions"><button class="course-audio" id="courseAudio">▶ Обычная скорость</button><button class="course-audio" id="courseAudioSlow">▶ Медленно</button></div><div class="course-options">${options.map(value => `<button class="course-option" data-value="${esc(value)}">${esc(value)}</button>`).join('')}</div><div id="courseFeedback"></div>`;
     document.getElementById('courseAudio').onclick = () => speak(context.chinese, .86);
     document.getElementById('courseAudioSlow').onclick = () => speak(context.chinese, .64);
     content.querySelectorAll('.course-option').forEach(button => button.onclick = () => {
@@ -425,14 +450,14 @@
   function renderContextReading(content, step) {
     const { context, word } = step;
     const options = lessonWordOptions(word, 'translation_ru');
-    renderOptions(content, `<div class="course-skill">Чтение в контексте</div><div class="course-context">${contextText(context, 'highlight')}</div><h2>Что здесь означает «${esc(word.hanzi)}»?</h2><p>Пиньинь появится после ответа.</p>`, options, word.translation_ru, word, context.pinyin, step);
+    renderOptions(content, `<div class="course-skill">Чтение в контексте</div><div class="course-context">${contextText(context, 'highlight')}</div><h2>Выберите словарный перевод «${esc(word.hanzi)}»</h2><p>Пиньинь всей фразы появится после ответа.</p>`, options, word.translation_ru, word, context.pinyin, step);
   }
 
   function renderGrammarUse(content, step) {
     const grammar = step.grammar;
     const pool = lessons.filter(lesson => lesson.hsk_level === active.hsk_level && lesson.grammar && lesson.grammar.id !== grammar.id).map(lesson => lesson.grammar);
     const options = shuffled(unique([grammar.pattern, ...shuffled(pool).slice(0, 3).map(item => item.pattern)])).slice(0, 4);
-    renderOptions(content, `<div class="course-skill">Грамматика · выбор по смыслу</div><h2>Какая модель решает эту задачу?</h2><div class="course-hint">${esc(grammar.explanation_ru)}</div>`, options, grammar.pattern, null, `${grammar.title}: ${grammar.explanation_ru}`, step);
+    renderOptions(content, `<div class="course-skill">Грамматика · форма</div><h2>Выберите схему конструкции «${esc(grammar.title)}»</h2><div class="course-hint">${esc(grammar.explanation_ru)}</div>`, options, grammar.pattern, null, `${grammar.title}: ${grammar.explanation_ru}`, step);
   }
 
   function renderContextOrder(content, step) {

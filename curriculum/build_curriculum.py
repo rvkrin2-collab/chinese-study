@@ -394,7 +394,7 @@ def build(args: argparse.Namespace) -> dict:
             level_obj["units"].append(unit)
         levels.append(level_obj)
     return {
-        "version": "1.1.0", "schema_version": 1,
+        "version": "1.2.0", "schema_version": 1,
         "standard": "HSK 2.0 levels 1-4; lesson sequencing follows HSK Standard Course 1-4",
         "generated_by": "deterministic release builder; no runtime AI sequencing",
         "levels": levels,
