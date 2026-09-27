@@ -94,7 +94,7 @@ try {
   assert.equal(await page.locator('#courseNext').count(), 1, 'wrong answer must allow continuing');
 
   let sawCheckedProduction = false, sawContextListening = false;
-  for (let i = 0; i < 40 && !(await page.locator('.course-summary').count()); i++) {
+  for (let i = 0; i < 100 && !(await page.locator('.course-summary').count()); i++) {
     if (await page.getByRole('heading', { name: 'Восстановите фразу по пиньиню', exact: true }).count()) sawCheckedProduction = true;
     if (await page.getByRole('heading', { name: 'Какое из предложенных слов прозвучало?', exact: true }).count()) {
       sawContextListening = true;
