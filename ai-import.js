@@ -122,6 +122,6 @@ document.addEventListener('click',e=>{
   e.stopImmediatePropagation();
   launchMaterialTopic(id);
 },true);
-function wire(){css();modal();const old=document.getElementById('showMaterialAdd');if(old){const b=old.cloneNode(true);old.replaceWith(b);b.onclick=()=>document.getElementById('aiMatModal').classList.add('open')}else{const b=document.createElement('button');b.className='primary';b.textContent='+ Добавить материал';b.style.position='fixed';b.style.right='22px';b.style.bottom='22px';b.style.zIndex=999;b.onclick=()=>document.getElementById('aiMatModal').classList.add('open');document.body.appendChild(b)}renderAll()}
+function wire(){css();modal();const old=document.getElementById('showMaterialAdd');if(old){const b=old.cloneNode(true);old.replaceWith(b);b.onclick=()=>document.getElementById('aiMatModal').classList.add('open')}else{const b=document.createElement('button');b.className='primary';b.textContent='+ Добавить материал';b.style.position='fixed';b.style.right='22px';b.style.bottom='22px';b.style.zIndex=999;b.onclick=()=>document.getElementById('aiMatModal').classList.add('open');document.body.appendChild(b)}renderAll();const shop=document.getElementById('startShoppingTopic');if(shop)shop.onclick=e=>{e.preventDefault();launchMaterialTopic('shopping')}}
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',wire);else wire();
 })();
