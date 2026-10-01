@@ -1,0 +1,24 @@
+name: Diagnose material button
+on:
+  push:
+    paths:
+      - ".github/workflows/diagnose-material.yml"
+permissions:
+  contents: read
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Inspect generated core
+        run: |
+          cat dist/*.txt | base64 -d | gzip -dc > /tmp/index.html
+          python3 - <<'PY'
+          from pathlib import Path
+          s=Path('/tmp/index.html').read_text(encoding='utf-8')
+          for q in ['function renderMaterials','Начать тему','customMaterials','startCustomTopic','renderMaterials=']:
+              i=s.find(q)
+              print('\n===',q,'AT',i,'===')
+              if i>=0:
+                  print(s[max(0,i-1500):i+4000])
+          PY
