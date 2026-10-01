@@ -109,11 +109,12 @@ document.addEventListener('click',e=>{
   const explicit=raw.match(/startCustomTopic\((['"])(.*?)\1\)/);
   const looksLikeTopic=/Начать тему|Изучать эту тему|Изучать этот материал|Изучать слова/i.test(label);
   if(!explicit&&!looksLikeTopic)return;
+  const card=b.closest('.topiccard,article,.card');
   let id=explicit?.[2]||b.dataset.topicId||b.closest('[data-topic-id]')?.dataset.topicId||'';
+  if(!id&&card?.id?.startsWith('topic-'))id=card.id.slice(6);
   if(!id){
-    const card=b.closest('.topiccard,article,.card');
     const cardText=String(card?.textContent||'');
-    const hit=(state.customTopics||[]).find(t=>t?.title&&cardText.includes(String(t.title)));
+    const hit=[...Object.values(typeof TOPICS==='object'&&TOPICS?TOPICS:{}),...(state.customTopics||[])].find(t=>t?.title&&cardText.includes(String(t.title)));
     if(hit)id=hit.id;
   }
   if(!id)return;
