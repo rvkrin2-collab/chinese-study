@@ -4,6 +4,7 @@ on:
     paths:
       - "ai-import.js"
       - "manifest.txt"
+      - "server.py"
       - ".github/workflows/validate-frontend.yml"
 permissions:
   contents: read
@@ -12,10 +13,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Check frontend
+      - name: Validate Materials launch paths
         run: |
           node --check ai-import.js
-          grep -q '^version=6.8$' manifest.txt
-          grep -Fq "launchMaterialTopic('shopping')" ai-import.js
-          grep -Fq "document.getElementById('startShoppingTopic')" ai-import.js
-          grep -Fq "card?.id?.startsWith('topic-')" ai-import.js
+          python3 -m py_compile server.py
+          grep -q '^version=6.9$' manifest.txt
+          cat dist/*.txt | base64 -d | gzip -dc > /tmp/index.html
+          grep -Fq "document.getElementById('startShoppingTopic').onclick=()=>{activateTopic('shopping',3);openSession()}" /tmp/index.html
+          grep -Fq "window.studyMaterialOnly=function(id)" server.py
+          grep -Fq "b.onclick=()=>studyMaterialOnly(id)" server.py
+          ! grep -Fq "const shop=document.getElementById('startShoppingTopic')" ai-import.js
+          ! grep -Fq "e.stopImmediatePropagation()" ai-import.js
