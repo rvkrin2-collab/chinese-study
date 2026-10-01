@@ -1,0 +1,20 @@
+name: Validate Chinese Study frontend
+on:
+  push:
+    paths:
+      - "ai-import.js"
+      - "manifest.txt"
+      - ".github/workflows/validate-frontend.yml"
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check JavaScript and release version
+        run: |
+          node --check ai-import.js
+          grep -q '^version=6.6$' manifest.txt
+          grep -q 'window.startCustomTopic=launchMaterialTopic' ai-import.js
+          grep -q "document.addEventListener('click'" ai-import.js
