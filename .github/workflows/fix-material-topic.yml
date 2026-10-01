@@ -1,0 +1,36 @@
+name: Fix Materials topic button
+on:
+  push:
+    paths:
+      - '.github/workflows/fix-material-topic.yml'
+permissions:
+  contents: write
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Restore ai-import and expose topic action
+        run: |
+          git show 4a61386009a60248bc580b57d01e6ba82abb5959^:ai-import.js > ai-import.js
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('ai-import.js')
+          s=p.read_text()
+          old="startCustomTopic=function(id){ensureState();"
+          new="window.startCustomTopic=startCustomTopic=function(id){ensureState();"
+          assert old in s
+          s=s.replace(old,new,1)
+          p.write_text(s)
+          PY
+          node --check ai-import.js
+          grep -q 'window.startCustomTopic=startCustomTopic' ai-import.js
+      - name: Commit fix
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add ai-import.js
+          git commit -m 'Fix Materials start topic button'
+          git push
