@@ -63,12 +63,22 @@ jobs:
 
           const btn=page.locator('#startShoppingTopic');
           if(!await btn.isVisible()) throw new Error('Start Topic button not visible on Materials page');
+          console.log('HANDLER', await btn.evaluate(el=>String(el.onclick)));
           await btn.click();
           await page.waitForTimeout(300);
 
           const session=page.locator('#session');
-          if(!await session.isVisible()) throw new Error('Built-in topic did not open session from Materials page');
-          if(!(await session.getAttribute('class')||'').includes('open')) throw new Error('Session lacks open class');
+          const sessionClass=await session.getAttribute('class');
+          const sessionVisible=await session.isVisible().catch(()=>false);
+          console.log('ACTIVE_TOPIC', await page.evaluate(()=>JSON.stringify(state.activeTopic)));
+          console.log('TOPIC_NEXT', await page.evaluate(()=>JSON.stringify({topicLessonNext:state.topicLessonNext,strictTopicNext:state.strictTopicNext})));
+          console.log('SESSION_CLASS', sessionClass);
+          console.log('SESSION_VISIBLE', sessionVisible);
+          console.log('BROWSER_ERRORS_AFTER_CLICK', JSON.stringify(errors));
+          if(!sessionVisible || !String(sessionClass||'').includes('open')){
+            await page.screenshot({path:'materials-e2e-failure.png', fullPage:true});
+            throw new Error('Built-in topic did not open session from Materials page');
+          }
           console.log('BUILTIN_OK', await page.locator('#phase').innerText());
 
           // Close and test a saved custom material using the same page.
