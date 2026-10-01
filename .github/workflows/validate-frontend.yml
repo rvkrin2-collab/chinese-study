@@ -15,6 +15,10 @@ jobs:
       - name: Check JavaScript and release version
         run: |
           node --check ai-import.js
-          grep -q '^version=6.6$' manifest.txt
+          grep -q '^version=6.7
+          grep -q 'window.startCustomTopic=launchMaterialTopic' ai-import.js
+          grep -q "document.addEventListener('click'" ai-import.js
+          grep -Fq "card?.id?.startsWith('topic-')" ai-import.js
+ manifest.txt
           grep -q 'window.startCustomTopic=launchMaterialTopic' ai-import.js
           grep -q "document.addEventListener('click'" ai-import.js
