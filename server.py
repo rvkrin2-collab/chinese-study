@@ -32,6 +32,18 @@ RELEASE_ASSET_SHA256 = {
     "curriculum/curriculum-v1.json": "e4b461897a5871aeceb543a109aa733d759543f35f8ba6ca7418b4b664445106",
 }
 
+def release_version():
+    try:
+        manifest = (APP / "manifest.txt").read_text(encoding="utf-8")
+        match = re.search(r"(?m)^version=([^\\s]+)$", manifest)
+        if match:
+            return match.group(1).strip()
+    except Exception:
+        pass
+    return "6.9"
+
+APP_VERSION = release_version()
+
 SYSTEM_PROMPT = """Ты методист по китайскому для русскоязычного ученика HSK 1–4.
 На входе — текст учебного материала, уже извлечённый из фото/PDF/TXT, и иногда заметка пользователя.
 Не придумывай факты о содержании источника и не угадывай неразборчивый текст. Упражнения можно создавать новые по теме и лексике источника.
@@ -555,7 +567,7 @@ def ensure_release_asset(request_path):
 
 
 class Handler(SimpleHTTPRequestHandler):
-    server_version="ChineseStudy/6.5"
+    server_version=f"ChineseStudy/{APP_VERSION}"
     def __init__(self,*a,**kw):super().__init__(*a,directory=str(APP),**kw)
     def send_bytes(self,status,body,ctype,cache="no-store"):
         self.send_response(status);self.send_header("Content-Type",ctype);self.send_header("Content-Length",str(len(body)));self.send_header("Cache-Control",cache);self.end_headers();self.wfile.write(body)
@@ -563,7 +575,7 @@ class Handler(SimpleHTTPRequestHandler):
     def do_GET(self):
         path=self.path.split("?",1)[0]
         if path.rstrip("/")=="/api/health":
-            return self.send_json(200,{"ok":True,"version":"6.5","provider":"MiniMax","ai_configured":bool(KEY),"model":MODEL,"vision":"coding_plan/vlm","saved_material_actions":True,"curriculum":"1.2.0"})
+            return self.send_json(200,{"ok":True,"version":APP_VERSION,"provider":"MiniMax","ai_configured":bool(KEY),"model":MODEL,"vision":"coding_plan/vlm","saved_material_actions":True,"curriculum":"1.2.0"})
         if path.rstrip("/")=="/api/state":
             return self.send_json(200,read_sync_state())
         if path.rstrip("/")=="/api/library":
@@ -571,6 +583,11 @@ class Handler(SimpleHTTPRequestHandler):
         if path.rstrip("/")=="/api/materials/analyze/status":
             job_id=self.path.split("job=",1)[1].split("&",1)[0] if "job=" in self.path else ""
             return self.send_json(200,analyze_job_status(job_id))
+        if path=="/ai-import.js":
+            p=APP/"ai-import.js"
+            if p.is_file():
+                return self.send_bytes(200,p.read_bytes(),"application/javascript; charset=utf-8","no-store")
+            return self.send_json(404,{"error":"ai-import.js unavailable"})
         if path=="/cloud-sync.js":
             return self.send_bytes(200,CLOUD_SYNC_JS.encode("utf-8"),"application/javascript; charset=utf-8")
         if path=="/topic-study.js":
@@ -589,7 +606,7 @@ class Handler(SimpleHTTPRequestHandler):
                 html=re.sub(r'<script src="ai-import\.js\?v=[^"]+"></script>\s*',"",html)
                 html=re.sub(r'<script src="cloud-sync\.js\?v=[^"]+"></script>\s*',"",html)
                 html=re.sub(r'<script src="curriculum-app\.js\?v=[^"]+"></script>\s*',"",html)
-                html=html.replace("</body>",'<script src="topic-study.js?v=6.5"></script>\n<script src="ai-import.js?v=6.5"></script>\n<script src="curriculum-app.js?v=6.5"></script>\n<script src="cloud-sync.js?v=6.5"></script>\n</body>')
+                html=html.replace("</body>",f'<script src="topic-study.js?v={APP_VERSION}"></script>\\n<script src="ai-import.js?v={APP_VERSION}"></script>\\n<script src="curriculum-app.js?v={APP_VERSION}"></script>\\n<script src="cloud-sync.js?v={APP_VERSION}"></script>\\n</body>')
                 return self.send_bytes(200,html.encode("utf-8"),"text/html; charset=utf-8","no-cache")
         return super().do_GET()
     def do_POST(self):
@@ -625,5 +642,5 @@ class Handler(SimpleHTTPRequestHandler):
 
 if __name__=="__main__":
     APP.mkdir(parents=True,exist_ok=True)
-    print(f"Chinese Study 6.5 + Curriculum 1.2 + MiniMax on http://{HOST}:{PORT}",flush=True)
+    print(f"Chinese Study {APP_VERSION} + Curriculum 1.2 + MiniMax on http://{HOST}:{PORT}",flush=True)
     ThreadingHTTPServer((HOST,PORT),Handler).serve_forever()
