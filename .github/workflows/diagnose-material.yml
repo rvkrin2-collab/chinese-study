@@ -16,7 +16,7 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
           s=Path('/tmp/index.html').read_text(encoding='utf-8')
-          for q in ['function activateTopic','function openSession','function showStep','function progressCounter','function renderToday','function renderAll']:
+          for q in ['function save()','function save(','function activateTopic','function openSession','function renderToday','function renderAll']:
               i=s.find(q)
               print('\n===',q,'AT',i,'===')
               if i>=0: print(s[i:i+2600])
