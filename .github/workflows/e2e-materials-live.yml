@@ -1,0 +1,82 @@
+name: E2E live Materials launch
+on:
+  push:
+    paths:
+      - ".github/workflows/e2e-materials-live.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install Playwright
+        run: |
+          npm init -y >/dev/null 2>&1
+          npm install playwright@1.52.0
+          npx playwright install --with-deps chromium
+      - name: Test live Materials start button
+        run: |
+          cat > /tmp/test-live.mjs <<'JS'
+          import { chromium } from 'playwright';
+          const browser = await chromium.launch({headless:true});
+          const page = await browser.newPage({viewport:{width:1280,height:900}});
+          page.on('console', m => console.log('BROWSER', m.type(), m.text()));
+          page.on('pageerror', e => console.log('PAGEERROR', e.message));
+          await page.goto('https://portal.netroman.ru/chinese/', {waitUntil:'networkidle', timeout:60000});
+          console.log('URL', page.url());
+          console.log('TITLE', await page.title());
+          const body = await page.locator('body').innerText();
+          console.log('HAS_MATERIALS_TEXT', body.includes('Материал'));
+
+          // If onboarding is present, choose HSK 3 so it doesn't block interaction.
+          const onboarding = page.locator('.course-onboarding');
+          if (await onboarding.count() && await onboarding.isVisible().catch(()=>false)) {
+            const h3 = onboarding.getByRole('button', {name:/HSK 3/i});
+            if (await h3.count()) await h3.first().click();
+          }
+
+          // Navigate to Materials using the actual nav button or by core view switch.
+          const matNav = page.locator('[data-view="materials"]');
+          if (await matNav.count()) {
+            await matNav.first().click();
+          } else {
+            await page.evaluate(() => typeof showView==='function' && showView('materials'));
+          }
+          await page.waitForTimeout(500);
+
+          const btn = page.locator('#startShoppingTopic');
+          if (!await btn.count()) throw new Error('startShoppingTopic button not found');
+          if (!await btn.isVisible()) throw new Error('startShoppingTopic button not visible');
+          console.log('BUTTON_TEXT', await btn.innerText());
+
+          await btn.click();
+          await page.waitForTimeout(800);
+
+          const session = page.locator('#session');
+          const cls = await session.getAttribute('class');
+          const visible = await session.isVisible().catch(()=>false);
+          console.log('SESSION_CLASS', cls);
+          console.log('SESSION_VISIBLE', visible);
+          const phase = page.locator('#phase');
+          if (await phase.count()) console.log('PHASE', await phase.innerText());
+
+          if (!visible || !String(cls||'').includes('open')) {
+            await page.screenshot({path:'materials-failure.png', fullPage:true});
+            throw new Error('Materials Start Topic click did not open lesson session');
+          }
+          await page.screenshot({path:'materials-success.png', fullPage:true});
+          await browser.close();
+          JS
+          node /tmp/test-live.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: materials-e2e-screenshot
+          path: materials-*.png
+          if-no-files-found: ignore
