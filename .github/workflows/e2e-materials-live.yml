@@ -32,8 +32,8 @@ jobs:
             sleep 1
           done
           curl -fsS http://127.0.0.1:8910/api/health
-          curl -fsS http://127.0.0.1:8910/ | grep -F 'ai-import.js?v=6.9'
-          curl -fsS -D /tmp/ai-headers.txt -o /dev/null http://127.0.0.1:8910/ai-import.js?v=6.9
+          curl -fsS http://127.0.0.1:8910/ | grep -F 'ai-import.js?v=7.0'
+          curl -fsS -D /tmp/ai-headers.txt -o /dev/null http://127.0.0.1:8910/ai-import.js?v=7.0
           grep -qi 'cache-control: no-store' /tmp/ai-headers.txt
       - name: Browser test Materials page
         run: |
