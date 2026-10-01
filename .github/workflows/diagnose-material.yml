@@ -16,7 +16,7 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
           s=Path('/tmp/index.html').read_text(encoding='utf-8')
-          for q in ['function renderMaterials','Начать тему','customMaterials','startCustomTopic','renderMaterials=']:
+          for q in ['startShoppingTopic','showShoppingSource','openSession()','function buildSession','function openSession']:
               i=s.find(q)
               print('\n===',q,'AT',i,'===')
               if i>=0:
