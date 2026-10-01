@@ -22,7 +22,7 @@ jobs:
           npx playwright install --with-deps chromium
       - name: Test live Materials start button
         run: |
-          cat > /tmp/test-live.mjs <<'JS'
+          cat > test-live.mjs <<'JS'
           import { chromium } from 'playwright';
           const browser = await chromium.launch({headless:true});
           const page = await browser.newPage({viewport:{width:1280,height:900}});
@@ -73,7 +73,7 @@ jobs:
           await page.screenshot({path:'materials-success.png', fullPage:true});
           await browser.close();
           JS
-          node /tmp/test-live.mjs
+          node test-live.mjs
       - uses: actions/upload-artifact@v4
         if: always()
         with:
