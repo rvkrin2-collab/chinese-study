@@ -1,5 +1,6 @@
 name: Diagnose material button
 on:
+  workflow_dispatch:
   push:
     paths:
       - ".github/workflows/diagnose-material.yml"
@@ -13,12 +14,5 @@ jobs:
       - name: Inspect generated core
         run: |
           cat dist/*.txt | base64 -d | gzip -dc > /tmp/index.html
-          python3 - <<'PY'
-          from pathlib import Path
-          s=Path('/tmp/index.html').read_text(encoding='utf-8')
-          for q in ['startShoppingTopic','showShoppingSource','openSession()','function buildSession','function openSession']:
-              i=s.find(q)
-              print('\n===',q,'AT',i,'===')
-              if i>=0:
-                  print(s[max(0,i-1500):i+4000])
-          PY
+          grep -n -o ".\{0,700\}startShoppingTopic.\{0,1500\}" /tmp/index.html || true
+          grep -n -o ".\{0,700\}showShoppingSource.\{0,1500\}" /tmp/index.html || true
