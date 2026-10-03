@@ -1,0 +1,29 @@
+name: Inspect production renderer
+on:
+  push:
+    paths:
+      - ".github/workflows/inspect-production.yml"
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Inspect core production renderer
+        run: |
+          cat dist/*.txt | base64 -d | gzip -dc > /tmp/index.html
+          python3 - <<'PY'
+          from pathlib import Path
+          s=Path('/tmp/index.html').read_text(encoding='utf-8')
+          for q in ['function renderProduction','renderProduction=','type===\'production\'','case \'production\'','production']:
+              print('\n###',q)
+              start=0
+              found=0
+              while True:
+                  i=s.find(q,start)
+                  if i<0 or found>=8: break
+                  print('---',i,'---')
+                  print(s[max(0,i-1200):i+3500])
+                  start=i+len(q); found+=1
+          PY
