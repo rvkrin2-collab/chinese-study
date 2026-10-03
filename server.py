@@ -28,7 +28,7 @@ RELEASE_ASSETS = {
     "/curriculum/curriculum-v1.json": "curriculum/curriculum-v1.json",
 }
 RELEASE_ASSET_SHA256 = {
-    "curriculum-app.js": "b3df5e326fcbd4095e5d6eab2455f13cab388783ef8da095102807a8f28ef274",
+    "curriculum-app.js": "3fe27beb3734a575a9407dd6aa55c557f9ac41b4b5c18fded07095b158b19375",
     "curriculum/curriculum-v1.json": "e4b461897a5871aeceb543a109aa733d759543f35f8ba6ca7418b4b664445106",
 }
 
@@ -40,7 +40,7 @@ def release_version():
             return match.group(1).strip()
     except Exception:
         pass
-    return "7.1"
+    return "7.2"
 
 APP_VERSION = release_version()
 
