@@ -20,6 +20,13 @@ jobs:
           node --check ai-import.js
           node --check curriculum-app.js
           python3 -m py_compile server.py
+          python3 - <<'PY'
+          import server
+          open('/tmp/topic-study.js','w',encoding='utf-8').write(server.TOPIC_STUDY_JS)
+          open('/tmp/cloud-sync.js','w',encoding='utf-8').write(server.CLOUD_SYNC_JS)
+          PY
+          node --check /tmp/topic-study.js
+          node --check /tmp/cloud-sync.js
           test "$(head -n 1 manifest.txt)" = "version=7.2"
           cat dist/*.txt | base64 -d | gzip -dc > /tmp/index.html
           grep -Fq "document.getElementById('startShoppingTopic').onclick=()=>{activateTopic('shopping',3);openSession()}" /tmp/index.html
