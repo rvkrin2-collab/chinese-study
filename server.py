@@ -159,6 +159,77 @@ window.toggleMaterialSource=function(id,btn){
   btn.textContent=box.classList.contains("hidden")?"Показать текст":"Скрыть текст";
 };
 
+function mergeExerciseLists(a,b,key){
+  const seen=new Set(),out=[];
+  for(const x of [...(a||[]),...(b||[])]){
+    const k=key(x);
+    if(!k||seen.has(k))continue;
+    seen.add(k);out.push(x);
+  }
+  return out;
+}
+function mergeExerciseSet(target,fresh){
+  target.grammar=mergeExerciseLists(target.grammar,fresh.grammar,x=>String(x?.q||"")+"|"+String(x?.a||""));
+  target.readings=mergeExerciseLists(target.readings,fresh.readings,x=>String(x?.cn||"")+"|"+String(x?.q||""));
+  target.builds=mergeExerciseLists(target.builds,fresh.builds,x=>String(x?.ans||""));
+  target.productions=mergeExerciseLists(target.productions,fresh.productions,x=>String(x?.ru||"")+"|"+String((x?.ans||[])[0]||""));
+  return target;
+}
+function applyGeneratedBuiltinExercises(){
+  const sets=state.generatedTopicExercises||{};
+  if(typeof TOPICS!=="object"||!TOPICS)return;
+  for(const [id,fresh] of Object.entries(sets)){
+    if(TOPICS[id])mergeExerciseSet(TOPICS[id],fresh||{});
+  }
+}
+applyGeneratedBuiltinExercises();
+
+window.generateMaterialExercises=async function(id,btn){
+  let t=topic(id);if(!t)return;
+  const originalText=btn?.textContent||"Новые задания";
+  if(btn){btn.disabled=true;btn.textContent="Генерирую…"}
+  try{
+    const tw=topicWords(t);
+    const words=tw.map(w=>({hanzi:w.h,pinyin:w.p,translation_ru:w.r}));
+    const existing={
+      grammar:(t.grammar||[]).slice(-20),
+      readings:(t.readings||[]).slice(-16),
+      builds:(t.builds||[]).slice(-20),
+      productions:(t.productions||[]).slice(-20)
+    };
+    const level=Math.max(1,Math.min(4,Math.round(tw.reduce((n,w)=>n+(Number(w.l)||3),0)/(tw.length||1))));
+    const response=await fetch("api/topic/exercises/generate",{
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({title:t.title||"",source_text:t.sourceText||t.ru||"",words,existing,hsk_level:level})
+    });
+    const data=await response.json().catch(()=>({}));
+    if(!response.ok)throw new Error(data.error||("HTTP "+response.status));
+    const count=["grammar","readings","builds","productions"].reduce((n,k)=>n+(data[k]?.length||0),0);
+
+    const custom=(state.customTopics||[]).find(x=>String(x.id)===String(id));
+    if(custom){
+      mergeExerciseSet(custom,data);
+      custom.studyMode="full";
+      custom.generatedAt=Date.now();
+      t=custom;
+    }else if(typeof TOPICS==="object"&&TOPICS?.[id]){
+      if(!state.generatedTopicExercises||typeof state.generatedTopicExercises!=="object")state.generatedTopicExercises={};
+      const saved=state.generatedTopicExercises[id]||{grammar:[],readings:[],builds:[],productions:[]};
+      mergeExerciseSet(saved,data);state.generatedTopicExercises[id]=saved;
+      mergeExerciseSet(TOPICS[id],data);t=TOPICS[id];
+    }else{
+      mergeExerciseSet(t,data);t.studyMode="full";
+    }
+    saveState();try{save()}catch{}
+    if(btn){btn.textContent="Добавлено: "+count;btn.disabled=false}
+    setTimeout(()=>{try{renderMaterials()}catch{}},900);
+  }catch(e){
+    if(btn){btn.disabled=false;btn.textContent=originalText}
+    alert("Не удалось создать новые задания: "+(e?.message||e));
+  }
+};
+
 function materialCards(holder,items){
   const raw=[...holder.querySelectorAll("article, .card, .topiccard, [data-material-id]")];
   const unique=[...new Set(raw)].filter(el=>
@@ -175,6 +246,14 @@ function materialCards(holder,items){
 }
 
 function enhance(){
+  const shop=document.getElementById("startShoppingTopic");
+  if(shop&&!document.getElementById("generateShoppingExercises")){
+    const gb=document.createElement("button");
+    gb.id="generateShoppingExercises";gb.className="ghost generate-topic-btn";
+    gb.textContent="Новые задания";
+    gb.onclick=()=>generateMaterialExercises("shopping",gb);
+    shop.insertAdjacentElement("afterend",gb);
+  }
   const holder=$("#customMaterials");if(!holder)return;
   const items=[...(state.materials||[])].reverse();
 
@@ -202,7 +281,7 @@ function enhance(){
       actions.style.cssText="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap";
       card.appendChild(actions);
     }
-    $$(".study-only-btn,.legacy-study-btn,.reanalyze-btn,.source-study-btn",actions).forEach(x=>x.remove());
+    $(".study-only-btn,.legacy-study-btn,.reanalyze-btn,.source-study-btn,.generate-topic-btn",actions).forEach(x=>x.remove());
 
     if(id&&t){
       const b=document.createElement("button");
@@ -210,6 +289,12 @@ function enhance(){
       b.textContent=t.studyMode==="words"?"Изучать слова":"Изучать этот материал";
       b.onclick=()=>studyMaterialOnly(id);
       actions.prepend(b);
+
+      const gb=document.createElement("button");
+      gb.className="ghost generate-topic-btn";
+      gb.textContent="Новые задания";
+      gb.onclick=()=>generateMaterialExercises(id,gb);
+      actions.appendChild(gb);
 
       if(t.sourceText){
         const sb=document.createElement("button");
@@ -260,8 +345,9 @@ function mergeHistory(r,l){return uniq([...arr(r),...arr(l)],x=>[x?.ts,x?.id??''
 function mergeWords(r,l){const out={...(r||{})};for(const [id,v] of Object.entries(l||{})){const a=out[id];if(!a){out[id]=v;continue}const al=Number(a.last||0),vl=Number(v?.last||0);if(vl>al)out[id]=v;else if(vl===al){const as=(a.seen||0)+(a.reps||0)+(a.lapses||0),vs=(v?.seen||0)+(v?.reps||0)+(v?.lapses||0);if(vs>as)out[id]=v}}return out}
 function mergeSkills(r,l){const out={...(r||{})};for(const [k,v] of Object.entries(l||{})){const a=out[k]||{};out[k]=(Number(v?.total||0)>Number(a.total||0))?v:a}return out}
 function newerTopic(a,b){if(!a)return b;if(!b)return a;return Number(b.started||0)>Number(a.started||0)?b:a}
+function mergeGenerated(r,l){const out={...(r||{})};for(const [id,v] of Object.entries(l||{})){const a=out[id]||{};out[id]={grammar:uniq([...arr(a.grammar),...arr(v?.grammar)],x=>JSON.stringify(x)),readings:uniq([...arr(a.readings),...arr(v?.readings)],x=>JSON.stringify(x)),builds:uniq([...arr(a.builds),...arr(v?.builds)],x=>JSON.stringify(x)),productions:uniq([...arr(a.productions),...arr(v?.productions)],x=>JSON.stringify(x))}}return out}
 function mergeCurriculum(r,l){r=r&&typeof r==='object'?r:{};l=l&&typeof l==='object'?l:{};const newer=Number(l.updatedAt||0)>=Number(r.updatedAt||0)?l:r,older=newer===l?r:l,out={...older,...newer};out.schemaVersion=Math.max(Number(r.schemaVersion||0),Number(l.schemaVersion||0),1);out.completed={...(r.completed||{})};for(const [id,ts] of Object.entries(l.completed||{}))out.completed[id]=Math.max(Number(out.completed[id]||0),Number(ts||0));out.lessonResults={...(r.lessonResults||{})};for(const [id,v] of Object.entries(l.lessonResults||{})){if(Number(v?.completedAt||0)>=Number(out.lessonResults[id]?.completedAt||0))out.lessonResults[id]=v}out.grammarSrs=mergeWords(r.grammarSrs,l.grammarSrs);out.updatedAt=Math.max(Number(r.updatedAt||0),Number(l.updatedAt||0));return out}
-function mergeState(remote,local){remote=remote&&typeof remote==='object'?remote:{};local=local&&typeof local==='object'?local:{};const o={...remote,...local};o.words=mergeWords(remote.words,local.words);o.history=mergeHistory(remote.history,local.history);o.skills=mergeSkills(remote.skills,local.skills);o.materials=mergeById(remote.materials,local.materials,80);o.customWords=mergeById(remote.customWords,local.customWords);o.customTopics=mergeById(remote.customTopics,local.customTopics);o.curriculum=mergeCurriculum(remote.curriculum,local.curriculum);o.recentTasks=uniq([...arr(remote.recentTasks),...arr(local.recentTasks)],x=>String(x),50);o.recentVocabModes=uniq([...arr(remote.recentVocabModes),...arr(local.recentVocabModes)],x=>String(x),24);o.sessions=Math.max(Number(remote.sessions||0),Number(local.sessions||0));o.streak=Math.max(Number(remote.streak||1),Number(local.streak||1));o.lastDay=stampDay(local.lastDay)>=stampDay(remote.lastDay)?local.lastDay:remote.lastDay;o.activeTopic=newerTopic(remote.activeTopic,local.activeTopic)||null;return o}
+function mergeState(remote,local){remote=remote&&typeof remote==='object'?remote:{};local=local&&typeof local==='object'?local:{};const o={...remote,...local};o.words=mergeWords(remote.words,local.words);o.history=mergeHistory(remote.history,local.history);o.skills=mergeSkills(remote.skills,local.skills);o.materials=mergeById(remote.materials,local.materials,80);o.customWords=mergeById(remote.customWords,local.customWords);o.customTopics=mergeById(remote.customTopics,local.customTopics);o.curriculum=mergeCurriculum(remote.curriculum,local.curriculum);o.generatedTopicExercises=mergeGenerated(remote.generatedTopicExercises,local.generatedTopicExercises);o.recentTasks=uniq([...arr(remote.recentTasks),...arr(local.recentTasks)],x=>String(x),50);o.recentVocabModes=uniq([...arr(remote.recentVocabModes),...arr(local.recentVocabModes)],x=>String(x),24);o.sessions=Math.max(Number(remote.sessions||0),Number(local.sessions||0));o.streak=Math.max(Number(remote.streak||1),Number(local.streak||1));o.lastDay=stampDay(local.lastDay)>=stampDay(remote.lastDay)?local.lastDay:remote.lastDay;o.activeTopic=newerTopic(remote.activeTopic,local.activeTopic)||null;return o}
 function libraryOf(x=state){return{materials:arr(x?.materials),customWords:arr(x?.customWords),customTopics:arr(x?.customTopics)}}
 function mergeLibrary(remote,local){return{materials:mergeById(remote?.materials,local?.materials,80),customWords:mergeById(remote?.customWords,local?.customWords),customTopics:mergeById(remote?.customTopics,local?.customTopics)}}
 function hydrate(){for(const w of arr(state.customWords)){if(typeof WORDS!=='undefined'&&!WORDS.some(x=>String(x.id)===String(w.id)))WORDS.push(w)}}
