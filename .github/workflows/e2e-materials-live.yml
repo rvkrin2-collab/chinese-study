@@ -139,6 +139,13 @@ jobs:
           });
           await page.waitForTimeout(700);
 
+          console.log('MATERIAL_STATE',JSON.stringify(await page.evaluate(()=>({
+            materials:state.materials,
+            customTopics:state.customTopics,
+            hasGenerator:typeof window.generateMaterialExercises,
+            topicStudyLoaded:typeof window.studyMaterialOnly
+          }))));
+          console.log('MATERIAL_HTML',await page.locator('#customMaterials').innerHTML());
           const generate=page.locator('#customMaterials .generate-topic-btn').last();
           if(!await generate.count()) throw new Error('Generate exercises button missing');
           await generate.click();
