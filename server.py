@@ -281,7 +281,7 @@ function enhance(){
       actions.style.cssText="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap";
       card.appendChild(actions);
     }
-    $(".study-only-btn,.legacy-study-btn,.reanalyze-btn,.source-study-btn,.generate-topic-btn",actions).forEach(x=>x.remove());
+    $$(".study-only-btn,.legacy-study-btn,.reanalyze-btn,.source-study-btn,.generate-topic-btn",actions).forEach(x=>x.remove());
 
     if(id&&t){
       const b=document.createElement("button");
