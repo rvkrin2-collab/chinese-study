@@ -507,16 +507,73 @@
     };
   }
 
+  async function courseAiCheck(args) {
+    if (typeof window.aiCheckChinese === 'function') return window.aiCheckChinese(args);
+    const response = await fetch('api/chinese/check', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        prompt_ru: args.promptRu || '', user_answer: args.userAnswer || '',
+        references: args.references || [], reference_pinyin: args.referencePinyin || '',
+        context: args.context || '', hsk_level: args.hskLevel || active?.hsk_level || ensureCourseState().startLevel || 3
+      })
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || ('HTTP ' + response.status));
+    return data;
+  }
+
+  function courseAiFeedback(result, userAnswer, reference = '', referencePinyin = '') {
+    const ok = Boolean(result?.ok), acceptable = result?.verdict === 'acceptable';
+    const corrected = String(result?.corrected_cn || reference || '').trim();
+    const correctedPy = String(result?.corrected_pinyin || referencePinyin || '').trim();
+    const errors = (result?.errors || []).map(error =>
+      '<div style="margin-top:7px"><b>' + esc(error?.fragment || '') + '</b>' +
+      (error?.pinyin ? ' · <span class="course-pinyin">' + esc(error.pinyin) + '</span>' : '') +
+      (error?.explanation_ru ? ' — ' + esc(error.explanation_ru) : '') + '</div>'
+    ).join('');
+    let html = '<div class="course-feedback ' + (ok ? 'ok' : 'bad') + '"><b>' +
+      (ok ? (acceptable ? 'Допустимо' : 'Верно') : 'Нужно исправить') + '</b>';
+    html += '<div style="margin-top:8px">Ваш ответ: <b>' + esc(userAnswer) + '</b></div>';
+    if (result?.comment_ru) html += '<div style="margin-top:8px">' + esc(result.comment_ru) + '</div>';
+    html += errors;
+    if (corrected) html += '<div class="course-context" style="margin-top:10px">' +
+      (ok && corrected === userAnswer ? 'Фраза: ' : 'Вариант: ') + esc(corrected) + '</div>';
+    if (correctedPy) html += '<div class="course-pinyin">' + esc(correctedPy) + '</div>';
+    if (!ok && reference && corrected !== reference) {
+      html += '<div style="margin-top:9px">Эталон: <b>' + esc(reference) + '</b></div>' +
+        (referencePinyin ? '<div class="course-pinyin">' + esc(referencePinyin) + '</div>' : '');
+    }
+    return html + '</div>';
+  }
+
+  function setAiChecking(button, busy) {
+    if (!button) return;
+    button.disabled = busy;
+    button.textContent = busy ? 'Проверяю…' : 'Проверить';
+  }
+
   function renderContextProduction(content, step) {
     const { context, word } = step;
-    content.innerHTML = `<div class="course-skill">Воспроизведение</div><h2>Восстановите фразу по пиньиню</h2><div class="course-pinyin" style="font-size:20px;line-height:1.6">${esc(context.pinyin)}</div><div class="course-hint">Ключевое слово: ${esc(word.translation_ru)} → ${esc(word.hanzi)}</div><p>Напишите всю фразу иероглифами. Знаки препинания можно не ставить.</p><button class="course-audio" id="courseAudio">▶ Прослушать</button><textarea class="course-input" id="courseInput" rows="3" lang="zh" autocomplete="off" placeholder="Восстановите китайскую фразу"></textarea><button class="course-next" id="courseCheck">Проверить</button><div id="courseFeedback"></div>`;
+    content.innerHTML = '<div class="course-skill">Воспроизведение</div><h2>Восстановите фразу по пиньиню</h2><div class="course-pinyin" style="font-size:20px;line-height:1.6">' + esc(context.pinyin) + '</div><div class="course-hint">Ключевое слово: ' + esc(word.translation_ru) + ' → ' + esc(word.hanzi) + '</div><p>Напишите естественную китайскую фразу. MiniMax проверит смысл и грамматику, а не буквальное совпадение.</p><button class="course-audio" id="courseAudio">▶ Прослушать</button><textarea class="course-input" id="courseInput" rows="3" lang="zh" autocomplete="off" placeholder="Напишите китайскую фразу"></textarea><button class="course-next" id="courseCheck">Проверить</button><div id="courseFeedback"></div>';
     document.getElementById('courseAudio').onclick = () => speak(context.chinese, .78);
-    document.getElementById('courseCheck').onclick = () => {
-      const value = document.getElementById('courseInput').value.trim();
-      const ok = norm(value) === norm(context.chinese); recordStepResult(step, ok);
-      document.getElementById('courseCheck').disabled = true;
-      document.getElementById('courseFeedback').innerHTML = `<div class="course-feedback ${ok ? 'ok' : 'bad'}"><b>${ok ? 'Фраза восстановлена' : 'Сверьте ответ с исходной фразой'}</b>${!ok && value ? `<div>Ваш ответ: ${esc(value)}</div>` : ''}<div class="course-context">${contextText(context, 'highlight')}</div><div class="course-pinyin">${esc(context.pinyin)}</div>${!ok ? '<small>Проверьте служебные слова и порядок частей предложения. Это задание вернётся ещё раз.</small>' : ''}</div>${nextButton()}`;
-      wireNext();
+    document.getElementById('courseCheck').onclick = async () => {
+      const value = document.getElementById('courseInput').value.trim(), button = document.getElementById('courseCheck'), feedback = document.getElementById('courseFeedback');
+      if (!value) { feedback.innerHTML = '<div class="course-feedback bad">Сначала напишите фразу.</div>'; return; }
+      setAiChecking(button, true); feedback.innerHTML = '<div class="course-feedback">MiniMax проверяет смысл и грамматику…</div>';
+      try {
+        const result = await courseAiCheck({
+          promptRu: context.translation_ru || context.ru || '',
+          userAnswer: value, references: [context.chinese], referencePinyin: context.pinyin,
+          context: 'Восстановление фразы по пиньиню. Ключевое слово: ' + word.hanzi,
+          hskLevel: active?.hsk_level
+        });
+        recordStepResult(step, Boolean(result.ok));
+        feedback.innerHTML = courseAiFeedback(result, value, context.chinese, context.pinyin) + nextButton();
+        button.disabled = true; wireNext();
+      } catch (error) {
+        setAiChecking(button, false);
+        feedback.innerHTML = '<div class="course-feedback bad"><b>Не удалось проверить нейросетью</b><div>' + esc(error?.message || error) + '</div><small>Ответ не засчитан как ошибка. Попробуйте ещё раз.</small></div>';
+      }
     };
   }
 
@@ -543,8 +600,24 @@
 
   function renderTranslation(content, step) {
     const item = step.item;
-    content.innerHTML = `<div class="tiny">Русский → 中文</div><h2>${esc(item.prompt_ru)}</h2><input class="course-input" id="courseInput" lang="zh" placeholder="Напишите по-китайски"><button class="course-next" id="courseCheck">Проверить</button><div id="courseFeedback"></div>`;
-    document.getElementById('courseCheck').onclick = () => checkText(item.answers[0], item.pinyin, 'courseInput', item.answers);
+    content.innerHTML = '<div class="tiny">Русский → 中文</div><h2>' + esc(item.prompt_ru) + '</h2><input class="course-input" id="courseInput" lang="zh" autocomplete="off" placeholder="Напишите по-китайски"><button class="course-next" id="courseCheck">Проверить</button><div id="courseFeedback"></div>';
+    document.getElementById('courseCheck').onclick = async () => {
+      const value = document.getElementById('courseInput').value.trim(), button = document.getElementById('courseCheck'), feedback = document.getElementById('courseFeedback');
+      if (!value) { feedback.innerHTML = '<div class="course-feedback bad">Сначала напишите фразу.</div>'; return; }
+      setAiChecking(button, true); feedback.innerHTML = '<div class="course-feedback">MiniMax проверяет смысл и грамматику…</div>';
+      try {
+        const result = await courseAiCheck({
+          promptRu: item.prompt_ru, userAnswer: value, references: item.answers || [item.answers?.[0]],
+          referencePinyin: item.pinyin || '', context: active?.title || '', hskLevel: active?.hsk_level
+        });
+        markResult(Boolean(result.ok), 'active_speech');
+        feedback.innerHTML = courseAiFeedback(result, value, item.answers?.[0] || '', item.pinyin || '') + nextButton();
+        button.disabled = true; wireNext();
+      } catch (error) {
+        setAiChecking(button, false);
+        feedback.innerHTML = '<div class="course-feedback bad"><b>Не удалось проверить нейросетью</b><div>' + esc(error?.message || error) + '</div><small>Ответ не засчитан как ошибка. Попробуйте ещё раз.</small></div>';
+      }
+    };
   }
 
   function checkText(answer, pinyin, inputId, accepted = [answer]) {
@@ -556,13 +629,23 @@
 
   function renderActive(content, step) {
     const item = step.item;
-    content.innerHTML = `<div class="course-skill">Воспроизведение</div><h2>${esc(item.prompt_ru)}</h2><textarea class="course-input" id="courseInput" rows="3" lang="zh" autocomplete="off" placeholder="Напишите фразу иероглифами"></textarea><button class="course-next" id="courseCheck">Проверить</button><div id="courseFeedback"></div>`;
-    document.getElementById('courseCheck').onclick = () => {
-      const value = document.getElementById('courseInput').value.trim();
-      const ok = norm(value) === norm(item.sample_cn); markResult(ok, 'active_speech');
-      document.getElementById('courseCheck').disabled = true;
-      document.getElementById('courseFeedback').innerHTML = `<div class="course-feedback ${ok ? 'ok' : 'bad'}"><b>${ok ? 'Фраза восстановлена' : 'Ответ не совпал'}</b>${!ok && value ? `<div>Ваш ответ: ${esc(value)}</div>` : ''}<div class="course-context">${esc(item.sample_cn)}</div><div class="course-pinyin">${esc(item.sample_pinyin)}</div></div>${nextButton()}`;
-      wireNext();
+    content.innerHTML = '<div class="course-skill">Воспроизведение</div><h2>' + esc(item.prompt_ru) + '</h2><textarea class="course-input" id="courseInput" rows="3" lang="zh" autocomplete="off" placeholder="Напишите фразу иероглифами"></textarea><button class="course-next" id="courseCheck">Проверить</button><div id="courseFeedback"></div>';
+    document.getElementById('courseCheck').onclick = async () => {
+      const value = document.getElementById('courseInput').value.trim(), button = document.getElementById('courseCheck'), feedback = document.getElementById('courseFeedback');
+      if (!value) { feedback.innerHTML = '<div class="course-feedback bad">Сначала напишите фразу.</div>'; return; }
+      setAiChecking(button, true); feedback.innerHTML = '<div class="course-feedback">MiniMax проверяет смысл и грамматику…</div>';
+      try {
+        const result = await courseAiCheck({
+          promptRu: item.prompt_ru, userAnswer: value, references: [item.sample_cn],
+          referencePinyin: item.sample_pinyin || '', context: active?.title || '', hskLevel: active?.hsk_level
+        });
+        markResult(Boolean(result.ok), 'active_speech');
+        feedback.innerHTML = courseAiFeedback(result, value, item.sample_cn || '', item.sample_pinyin || '') + nextButton();
+        button.disabled = true; wireNext();
+      } catch (error) {
+        setAiChecking(button, false);
+        feedback.innerHTML = '<div class="course-feedback bad"><b>Не удалось проверить нейросетью</b><div>' + esc(error?.message || error) + '</div><small>Ответ не засчитан как ошибка. Попробуйте ещё раз.</small></div>';
+      }
     };
   }
 
