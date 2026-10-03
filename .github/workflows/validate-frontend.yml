@@ -19,7 +19,24 @@ jobs:
           node --check ai-import.js
           node --check curriculum-app.js
           python3 -m py_compile server.py
-          grep -q '^version=7.1$' manifest.txt
+          grep -q '^version=7.2
+          cat dist/*.txt | base64 -d | gzip -dc > /tmp/index.html
+          grep -Fq "document.getElementById('startShoppingTopic').onclick=()=>{activateTopic('shopping',3);openSession()}" /tmp/index.html
+          grep -Fq "window.studyMaterialOnly=function(id)" server.py
+          grep -Fq "legacy render skipped after save" ai-import.js
+          grep -Fq "b.onclick=()=>studyMaterialOnly(id)" server.py
+          ! grep -Fq "const shop=document.getElementById('startShoppingTopic')" ai-import.js
+          ! grep -Fq "e.stopImmediatePropagation()" ai-import.js
+          grep -Fq "document.currentScript?.src" curriculum-app.js
+          grep -Fq '"/api/topic/exercises/generate"' server.py
+          grep -Fq '"/api/chinese/check"' server.py
+          grep -Fq 'window.aiCheckChinese=async function' ai-import.js
+          grep -Fq 'showProduction=function(s)' ai-import.js
+          grep -Fq 'courseAiCheck' curriculum-app.js
+          grep -Fq 'generateMaterialExercises' server.py
+          ! grep -Fq "const CLIENT_VERSION = '6.5'" curriculum-app.js
+          grep -Fq '"curriculum-app.js": "3fe27beb3734a575a9407dd6aa55c557f9ac41b4b5c18fded07095b158b19375"' server.py
+ manifest.txt
           cat dist/*.txt | base64 -d | gzip -dc > /tmp/index.html
           grep -Fq "document.getElementById('startShoppingTopic').onclick=()=>{activateTopic('shopping',3);openSession()}" /tmp/index.html
           grep -Fq "window.studyMaterialOnly=function(id)" server.py
@@ -29,4 +46,4 @@ jobs:
           ! grep -Fq "e.stopImmediatePropagation()" ai-import.js
           grep -Fq "document.currentScript?.src" curriculum-app.js
           ! grep -Fq "const CLIENT_VERSION = '6.5'" curriculum-app.js
-          grep -Fq '"curriculum-app.js": "b3df5e326fcbd4095e5d6eab2455f13cab388783ef8da095102807a8f28ef274"' server.py
+          grep -Fq '"curriculum-app.js": "3fe27beb3734a575a9407dd6aa55c557f9ac41b4b5c18fded07095b158b19375"' server.py
