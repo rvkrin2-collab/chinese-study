@@ -16,14 +16,16 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
           s=Path('/tmp/index.html').read_text(encoding='utf-8')
-          for q in ['function renderProduction','renderProduction=','type===\'production\'','case \'production\'','production']:
+          for q in ['Активный ответ','Напишите по-китайски','Ваш ответ','lessonSteps[lessonPos]','lessonPos','renderLesson','finishStep']:
               print('\n###',q)
               start=0
               found=0
               while True:
                   i=s.find(q,start)
-                  if i<0 or found>=8: break
-                  print('---',i,'---')
-                  print(s[max(0,i-1200):i+3500])
-                  start=i+len(q); found+=1
+                  if i<0 or found>=10: break
+                  if i>65000 or q not in ('lessonPos',):
+                      print('---',i,'---')
+                      print(s[max(0,i-1500):i+4500])
+                      found+=1
+                  start=i+len(q)
           PY
