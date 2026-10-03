@@ -381,6 +381,215 @@ def parse_model_json(s):
         if a>=0 and b>a:return json.loads(s[a:b+1])
         raise RuntimeError("MiniMax вернул некорректный JSON темы.")
 
+
+def minimax_text_json(system_prompt, user_text, max_tokens=5000, timeout=120):
+    if not KEY:
+        raise RuntimeError("На VPS не настроен MINIMAX_API_KEY.")
+    payload={
+        "model":MODEL,
+        "max_tokens":max_tokens,
+        "system":system_prompt,
+        "messages":[{"role":"user","content":user_text}]
+    }
+    resp=http_json(
+        TEXT_URL,payload,
+        {"X-Api-Key":KEY,"Authorization":"Bearer "+KEY,"Content-Type":"application/json","anthropic-version":"2023-06-01"},
+        timeout
+    )
+    parts=[x.get("text","") for x in resp.get("content",[]) if x.get("type")=="text" and x.get("text")]
+    if not parts:
+        raise RuntimeError("MiniMax M3 не вернул текстовый результат.")
+    return parse_model_json("\n".join(parts))
+
+
+def generate_topic_exercises(payload):
+    title=str(payload.get("title") or "Учебная тема").strip()[:200]
+    source=str(payload.get("source_text") or "").strip()[:45000]
+    words=payload.get("words") if isinstance(payload.get("words"),list) else []
+    existing=payload.get("existing") if isinstance(payload.get("existing"),dict) else {}
+    try:hsk=max(1,min(4,int(payload.get("hsk_level") or 3)))
+    except (TypeError,ValueError):hsk=3
+
+    clean_words=[]
+    for w in words[:40]:
+        if not isinstance(w,dict): continue
+        clean_words.append({
+            "hanzi":str(w.get("hanzi") or w.get("h") or "")[:40],
+            "pinyin":str(w.get("pinyin") or w.get("p") or "")[:100],
+            "translation_ru":str(w.get("translation_ru") or w.get("r") or "")[:180]
+        })
+
+    system_prompt="""Ты создаёшь НОВЫЙ набор упражнений по уже изучаемой теме китайского языка для русскоязычного ученика.
+Не меняй тему и не вводи новую обязательную грамматику основной программы. Используй лексику темы и конструкции подходящего уровня HSK.
+Задания должны быть НОВЫМИ: не повторяй дословно задания из блока EXISTING.
+Все китайские фразы должны быть естественными. Для каждого китайского ответа/предложения дай pinyin с тонами.
+
+Верни ТОЛЬКО JSON:
+{
+ "grammar":[{"question":"","options":["","","",""],"answer":"","pattern":"","meaning_ru":"","example_cn":"","example_pinyin":""}],
+ "readings":[{"cn":"","pinyin":"","question":"","options":["","","",""],"answer_index":0}],
+ "builds":[{"tokens":[""],"answer":"","pinyin":"","translation_ru":""}],
+ "productions":[{"prompt_ru":"","answers":[""],"pinyin":""}]
+}
+
+Требования:
+- 4 задания grammar, в каждом ровно 4 разных варианта и ровно один правильный.
+- 3 задания readings, в каждом ровно 4 разных варианта.
+- 4 задания builds на порядок слов, 3–10 осмысленных токенов.
+- 4 задания productions RU→中文. Допускай 1–3 естественных варианта ответа.
+- Не делай задания-близнецы и не копируй EXISTING.
+- Если исходного текста мало, создавай новые ситуации на той же лексике и теме.
+"""
+    user_text=(
+        f"Уровень: HSK {hsk}\nТема: {title}\n"
+        +"WORDS:\n"+json.dumps(clean_words,ensure_ascii=False)[:18000]
+        +"\nSOURCE:\n"+source
+        +"\nEXISTING:\n"+json.dumps(existing,ensure_ascii=False)[:26000]
+    )
+    out=minimax_text_json(system_prompt,user_text,max_tokens=9000,timeout=180)
+
+    grammar=[]
+    for g in out.get("grammar",[]) if isinstance(out.get("grammar"),list) else []:
+        if not isinstance(g,dict): continue
+        opts=[]
+        for x in g.get("options",[]) if isinstance(g.get("options"),list) else []:
+            x=str(x).strip()
+            if x and x not in opts: opts.append(x)
+        ans=str(g.get("answer") or "").strip()
+        if len(opts)!=4 or not ans or ans not in opts: continue
+        q=str(g.get("question") or "").strip()
+        if not q: continue
+        note=(str(g.get("pattern") or "").strip()+" — "+str(g.get("meaning_ru") or "").strip()).strip(" —")
+        grammar.append({"q":q,"opts":opts,"a":ans,"note":note,
+                        "ex":str(g.get("example_cn") or "").strip(),
+                        "py":str(g.get("example_pinyin") or "").strip()})
+
+    readings=[]
+    for item in out.get("readings",[]) if isinstance(out.get("readings"),list) else []:
+        if not isinstance(item,dict): continue
+        opts=[]
+        for x in item.get("options",[]) if isinstance(item.get("options"),list) else []:
+            x=str(x).strip()
+            if x and x not in opts: opts.append(x)
+        try:a=int(item.get("answer_index"))
+        except (TypeError,ValueError): continue
+        cn=str(item.get("cn") or "").strip()
+        q=str(item.get("question") or "").strip()
+        if len(opts)!=4 or not 0<=a<4 or not cn or not q: continue
+        readings.append({"cn":cn,"py":str(item.get("pinyin") or "").strip(),"q":q,"opts":opts,"a":a})
+
+    builds=[]
+    for item in out.get("builds",[]) if isinstance(out.get("builds"),list) else []:
+        if not isinstance(item,dict): continue
+        tokens=[str(x).strip() for x in (item.get("tokens") or []) if str(x).strip()]
+        ans=str(item.get("answer") or "").strip()
+        if not ans or not 3<=len(tokens)<=12: continue
+        builds.append({"tokens":tokens,"ans":ans,"py":str(item.get("pinyin") or "").strip(),
+                       "ru":str(item.get("translation_ru") or "").strip()})
+
+    productions=[]
+    for item in out.get("productions",[]) if isinstance(out.get("productions"),list) else []:
+        if not isinstance(item,dict): continue
+        answers=[]
+        for x in item.get("answers",[]) if isinstance(item.get("answers"),list) else []:
+            x=str(x).strip()
+            if x and x not in answers: answers.append(x)
+        ru=str(item.get("prompt_ru") or "").strip()
+        if not ru or not answers: continue
+        productions.append({"ru":ru,"ans":answers[:3],"py":str(item.get("pinyin") or "").strip()})
+
+    result={"grammar":grammar[:4],"readings":readings[:3],"builds":builds[:4],"productions":productions[:4]}
+    if sum(len(v) for v in result.values())<8:
+        raise RuntimeError("MiniMax создал слишком мало корректных новых заданий. Попробуй ещё раз.")
+    return result
+
+
+def check_chinese_answer(payload):
+    user_answer=str(payload.get("user_answer") or "").strip()
+    if not user_answer:
+        raise ValueError("Напиши ответ по-китайски.")
+    if len(user_answer)>500:
+        raise ValueError("Ответ слишком длинный.")
+
+    prompt_ru=str(payload.get("prompt_ru") or "").strip()[:1200]
+    references=payload.get("references") if isinstance(payload.get("references"),list) else []
+    references=[str(x).strip() for x in references if str(x).strip()][:6]
+    reference_pinyin=str(payload.get("reference_pinyin") or "").strip()[:1200]
+    context=str(payload.get("context") or "").strip()[:2500]
+    try:hsk=max(1,min(4,int(payload.get("hsk_level") or 3)))
+    except (TypeError,ValueError):hsk=3
+
+    system_prompt="""Ты проверяешь письменный ответ ученика на китайском языке.
+Главное правило: НЕ требуй дословного совпадения с эталоном. Оцени:
+1) передан ли требуемый смысл;
+2) грамматически ли допустима фраза;
+3) естественно ли она звучит на современном китайском.
+
+Если фраза грамматически правильна и передаёт нужный смысл, verdict должен быть "correct", даже если она отличается от эталона.
+Если смысл верен и грамматика допустима, но формулировка заметно неестественная, verdict "acceptable".
+Если есть грамматическая ошибка, неверное служебное слово, порядок слов меняет/ломает смысл или ответ не соответствует заданию — verdict "needs_fix".
+
+Верни ТОЛЬКО JSON:
+{
+ "verdict":"correct|acceptable|needs_fix",
+ "meaning_ok":true,
+ "grammar_ok":true,
+ "natural":true,
+ "comment_ru":"короткий полезный комментарий на русском",
+ "corrected_cn":"лучший естественный вариант; если исправление не нужно — ответ ученика",
+ "corrected_pinyin":"pinyin corrected_cn с тонами",
+ "errors":[
+   {"fragment":"ошибочный китайский фрагмент","pinyin":"pinyin этого ошибочного фрагмента с тонами","explanation_ru":"что именно исправить"}
+ ]
+}
+
+ВАЖНО:
+- Не придирайся к пунктуации и допустимым вариантам слов.
+- Не считай эталон единственно возможным ответом.
+- Если verdict=needs_fix, для КАЖДОГО указанного ошибочного китайского слова/фрагмента обязательно дай pinyin.
+- Комментарий должен быть конкретным и коротким, без лекции.
+- Не исправляй стиль ради стиля, если ответ уже нормальный.
+"""
+    user_text=(
+        f"Уровень ученика: HSK {hsk}\n"
+        f"ЗАДАНИЕ ПО-РУССКИ:\n{prompt_ru}\n"
+        f"ОТВЕТ УЧЕНИКА:\n{user_answer}\n"
+        f"ПРИМЕРЫ ДОПУСТИМЫХ ОТВЕТОВ:\n{json.dumps(references,ensure_ascii=False)}\n"
+        f"PINYIN ЭТАЛОНА:\n{reference_pinyin}\n"
+        f"ДОПОЛНИТЕЛЬНЫЙ КОНТЕКСТ:\n{context}"
+    )
+    out=minimax_text_json(system_prompt,user_text,max_tokens=2200,timeout=90)
+    verdict=str(out.get("verdict") or "").strip().lower()
+    if verdict not in ("correct","acceptable","needs_fix"):
+        verdict="needs_fix"
+
+    errors=[]
+    raw_errors=out.get("errors") if isinstance(out.get("errors"),list) else []
+    for e in raw_errors[:6]:
+        if not isinstance(e,dict): continue
+        fragment=str(e.get("fragment") or "").strip()
+        if not fragment: continue
+        errors.append({
+            "fragment":fragment,
+            "pinyin":str(e.get("pinyin") or "").strip(),
+            "explanation_ru":str(e.get("explanation_ru") or "").strip()
+        })
+
+    corrected=str(out.get("corrected_cn") or "").strip() or (user_answer if verdict!="needs_fix" else (references[0] if references else user_answer))
+    corrected_pinyin=str(out.get("corrected_pinyin") or "").strip() or reference_pinyin
+    return {
+        "ok":verdict in ("correct","acceptable"),
+        "verdict":verdict,
+        "meaning_ok":bool(out.get("meaning_ok")),
+        "grammar_ok":bool(out.get("grammar_ok")),
+        "natural":bool(out.get("natural")),
+        "comment_ru":str(out.get("comment_ru") or "").strip(),
+        "corrected_cn":corrected,
+        "corrected_pinyin":corrected_pinyin,
+        "errors":errors
+    }
+
+
 def text_analyze(extracted,note="",hsk_level=3):
     try:hsk_level=max(1,min(4,int(hsk_level)))
     except (TypeError,ValueError):hsk_level=3
@@ -631,6 +840,21 @@ class Handler(SimpleHTTPRequestHandler):
             if int(current.get("rev") or 0)!=base:return self.send_json(409,current)
             saved=write_sync_state(incoming,base)
             return self.send_json(200,{"ok":True,"rev":saved["rev"],"updated_at":saved["updated_at"]})
+        if path in ("/api/topic/exercises/generate","/api/chinese/check"):
+            try:n=int(self.headers.get("Content-Length","0"))
+            except:n=0
+            if n<=0 or n>MAX_STATE:return self.send_json(413,{"error":"Слишком большой запрос."})
+            try:body=json.loads(self.rfile.read(n).decode("utf-8"))
+            except Exception:return self.send_json(400,{"error":"Некорректный JSON запроса."})
+            if not isinstance(body,dict):return self.send_json(400,{"error":"Некорректный запрос."})
+            try:
+                if path=="/api/topic/exercises/generate":
+                    return self.send_json(200,generate_topic_exercises(body))
+                return self.send_json(200,check_chinese_answer(body))
+            except ValueError as e:
+                return self.send_json(400,{"error":str(e)})
+            except Exception as e:
+                return self.send_json(502,{"error":str(e)})
         if path!="/api/materials/analyze":return self.send_json(404,{"error":"not found"})
         try:n=int(self.headers.get("Content-Length","0"))
         except:n=0
