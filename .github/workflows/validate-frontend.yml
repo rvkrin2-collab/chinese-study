@@ -3,6 +3,7 @@ on:
   push:
     paths:
       - "ai-import.js"
+      - "curriculum-app.js"
       - "manifest.txt"
       - "server.py"
       - ".github/workflows/validate-frontend.yml"
@@ -13,12 +14,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Validate Materials launch paths
+      - name: Validate frontend and update versioning
         run: |
           node --check ai-import.js
           node --check curriculum-app.js
           python3 -m py_compile server.py
-          grep -q '^version=7.1
+          grep -q '^version=7.1$' manifest.txt
           cat dist/*.txt | base64 -d | gzip -dc > /tmp/index.html
           grep -Fq "document.getElementById('startShoppingTopic').onclick=()=>{activateTopic('shopping',3);openSession()}" /tmp/index.html
           grep -Fq "window.studyMaterialOnly=function(id)" server.py
@@ -28,11 +29,4 @@ jobs:
           ! grep -Fq "e.stopImmediatePropagation()" ai-import.js
           grep -Fq "document.currentScript?.src" curriculum-app.js
           ! grep -Fq "const CLIENT_VERSION = '6.5'" curriculum-app.js
- manifest.txt
-          cat dist/*.txt | base64 -d | gzip -dc > /tmp/index.html
-          grep -Fq "document.getElementById('startShoppingTopic').onclick=()=>{activateTopic('shopping',3);openSession()}" /tmp/index.html
-          grep -Fq "window.studyMaterialOnly=function(id)" server.py
-          grep -Fq "legacy render skipped after save" ai-import.js
-          grep -Fq "b.onclick=()=>studyMaterialOnly(id)" server.py
-          ! grep -Fq "const shop=document.getElementById('startShoppingTopic')" ai-import.js
-          ! grep -Fq "e.stopImmediatePropagation()" ai-import.js
+          grep -Fq '"curriculum-app.js": "b3df5e326fcbd4095e5d6eab2455f13cab388783ef8da095102807a8f28ef274"' server.py
