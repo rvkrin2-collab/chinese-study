@@ -146,6 +146,7 @@ jobs:
             topicStudyLoaded:typeof window.studyMaterialOnly
           }))));
           console.log('MATERIAL_HTML',await page.locator('#customMaterials').innerHTML());
+          console.log('PAGE_ERRORS_BEFORE_BUTTON',JSON.stringify(pageErrors));
           const generate=page.locator('#customMaterials .generate-topic-btn').last();
           if(!await generate.count()) throw new Error('Generate exercises button missing');
           await generate.click();
