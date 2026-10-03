@@ -1,6 +1,15 @@
 (() => {
   'use strict';
-  const CLIENT_VERSION = '6.5';
+  const CLIENT_VERSION = (() => {
+    try {
+      const current = document.currentScript?.src
+        || [...document.scripts].map(script => script.src).find(src => /(?:^|\/)curriculum-app\.js(?:\?|$)/.test(src));
+      if (!current) return 'dev';
+      return new URL(current, location.href).searchParams.get('v') || 'dev';
+    } catch (_) {
+      return 'dev';
+    }
+  })();
   const CURRICULUM_URL = 'curriculum/curriculum-v1.json?v=1.2.0';
   const DAY = 86400000;
   let curriculum = null;
@@ -759,7 +768,7 @@
     try {
       const response = await fetch('api/health', { cache: 'no-store' });
       const health = response.ok ? await response.json() : null;
-      if (!health?.version || health.version === CLIENT_VERSION || document.getElementById('courseUpdateNotice')) return;
+      if (!health?.version || CLIENT_VERSION === 'dev' || health.version === CLIENT_VERSION || document.getElementById('courseUpdateNotice')) return;
       const notice = document.createElement('div'); notice.id = 'courseUpdateNotice';
       notice.style.cssText = 'position:fixed;left:12px;right:12px;bottom:12px;z-index:13000;padding:13px 16px;border-radius:13px;background:#25322d;color:#fff;display:flex;gap:12px;align-items:center;justify-content:space-between;box-shadow:0 12px 35px #0006';
       notice.innerHTML = '<b>Доступна новая версия упражнений</b><button style="padding:9px 13px;border:0;border-radius:9px;font-weight:800;cursor:pointer">Обновить</button>';
