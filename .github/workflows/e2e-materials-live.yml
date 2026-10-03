@@ -32,8 +32,8 @@ jobs:
             sleep 1
           done
           curl -fsS http://127.0.0.1:8910/api/health
-          curl -fsS http://127.0.0.1:8910/ | grep -F 'ai-import.js?v=7.0'
-          curl -fsS -D /tmp/ai-headers.txt -o /dev/null http://127.0.0.1:8910/ai-import.js?v=7.0
+          curl -fsS http://127.0.0.1:8910/ | grep -F 'ai-import.js?v=7.1'
+          curl -fsS -D /tmp/ai-headers.txt -o /dev/null http://127.0.0.1:8910/ai-import.js?v=7.1
           grep -qi 'cache-control: no-store' /tmp/ai-headers.txt
       - name: Browser diagnose Materials page
         run: |
@@ -46,6 +46,11 @@ jobs:
 
           await page.goto('http://127.0.0.1:8910/', {waitUntil:'networkidle', timeout:60000});
           console.log('READY', await page.evaluate(()=>document.readyState));
+          console.log('CLIENT_VERSION', await page.evaluate(()=>window.CHINESE_CURRICULUM_CLIENT_VERSION));
+          await page.waitForTimeout(700);
+          const updateNotice=page.locator('#courseUpdateNotice');
+          console.log('UPDATE_NOTICE_COUNT', await updateNotice.count());
+          if(await updateNotice.count()) throw new Error('False update notice is visible on current release');
 
           const onboarding=page.locator('.course-onboarding');
           if(await onboarding.count() && await onboarding.isVisible().catch(()=>false)){
