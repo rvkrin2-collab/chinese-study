@@ -1,8 +1,9 @@
-name: E2E Materials launch
+name: E2E Chinese Study AI features
 on:
   push:
     paths:
       - "ai-import.js"
+      - "curriculum-app.js"
       - "server.py"
       - "manifest.txt"
       - ".github/workflows/e2e-materials-live.yml"
@@ -18,89 +19,158 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+
+      - name: Test server AI normalizers without network
+        run: |
+          python3 - <<'PY'
+          import server
+
+          server.KEY = "test"
+          def fake_check(system, user, max_tokens=0, timeout=0):
+              return {
+                  "verdict":"acceptable","meaning_ok":True,"grammar_ok":True,"natural":False,
+                  "comment_ru":"Фраза грамматически допустима.",
+                  "corrected_cn":"我明天会跟你联系。","corrected_pinyin":"Wǒ míngtiān huì gēn nǐ liánxì.",
+                  "errors":[]
+              }
+          server.minimax_text_json = fake_check
+          result=server.check_chinese_answer({
+              "prompt_ru":"Я свяжусь с тобой завтра.",
+              "user_answer":"我明天会跟你联系。",
+              "references":["我明天会联系你。"],
+              "reference_pinyin":"Wǒ míngtiān huì liánxì nǐ.",
+              "hsk_level":3
+          })
+          assert result["ok"] is True and result["verdict"]=="acceptable"
+
+          def fake_generate(system, user, max_tokens=0, timeout=0):
+              g={"question":"我___去。","options":["会","把","被","比"],"answer":"会","pattern":"会 + V","meaning_ru":"буду","example_cn":"我会去。","example_pinyin":"Wǒ huì qù."}
+              r={"cn":"我明天去公司。","pinyin":"Wǒ míngtiān qù gōngsī.","question":"Куда он идёт?","options":["В офис","Домой","В банк","В школу"],"answer_index":0}
+              b={"tokens":["我","明天","去","公司"],"answer":"我明天去公司。","pinyin":"Wǒ míngtiān qù gōngsī.","translation_ru":"Я завтра иду в офис."}
+              p={"prompt_ru":"Я завтра иду в офис.","answers":["我明天去公司。"],"pinyin":"Wǒ míngtiān qù gōngsī."}
+              return {"grammar":[dict(g,question=f"我___去{i}。") for i in range(4)],
+                      "readings":[dict(r,question=f"Вопрос {i}?") for i in range(3)],
+                      "builds":[dict(b,answer=f"我明天去公司{i}。") for i in range(4)],
+                      "productions":[dict(p,prompt_ru=f"Фраза {i}") for i in range(4)]}
+          server.minimax_text_json = fake_generate
+          generated=server.generate_topic_exercises({
+              "title":"工作","words":[{"hanzi":"公司","pinyin":"gōngsī","translation_ru":"компания"}],
+              "existing":{},"hsk_level":3
+          })
+          assert len(generated["grammar"])==4
+          assert len(generated["readings"])==3
+          assert len(generated["builds"])==4
+          assert len(generated["productions"])==4
+          print("BACKEND_AI_OK")
+          PY
+
       - name: Install Playwright
         run: |
           npm init -y >/dev/null 2>&1
           npm install playwright@1.52.0
           npx playwright install --with-deps chromium
+
       - name: Start current app locally
         run: |
           cat dist/*.txt | base64 -d | gzip -dc > index.html
-          CHINESE_STUDY_DIR="$PWD" CHINESE_STUDY_PORT=8910 CHINESE_STUDY_HOST=127.0.0.1 python3 server.py >/tmp/chinese-study.log 2>&1 &
+          mkdir -p .e2e-state
+          CHINESE_STUDY_DIR="$PWD"           CHINESE_STUDY_PORT=8910           CHINESE_STUDY_HOST=127.0.0.1           CHINESE_STUDY_STATE_FILE="$PWD/.e2e-state/state.json"           CHINESE_STUDY_LIBRARY_FILE="$PWD/.e2e-state/library.json"           python3 server.py >/tmp/chinese-study.log 2>&1 &
           for i in $(seq 1 30); do
-            if curl -fsS http://127.0.0.1:8910/api/health; then break; fi
+            if curl -fsS http://127.0.0.1:8910/api/health >/tmp/health.json; then break; fi
             sleep 1
           done
-          curl -fsS http://127.0.0.1:8910/api/health
-          curl -fsS http://127.0.0.1:8910/ | grep -F 'ai-import.js?v=7.1'
-          curl -fsS -D /tmp/ai-headers.txt -o /dev/null http://127.0.0.1:8910/ai-import.js?v=7.1
-          grep -qi 'cache-control: no-store' /tmp/ai-headers.txt
-      - name: Browser diagnose Materials page
-        run: |
-          cat > test-materials.mjs <<'JS'
-          import { chromium } from 'playwright';
-          const browser = await chromium.launch({headless:true});
-          const page = await browser.newPage({viewport:{width:1280,height:900}});
-          page.on('pageerror', e => console.log('PAGEERROR', e.message));
-          page.on('console', m => console.log('CONSOLE', m.type(), m.text()));
+          cat /tmp/health.json
+          grep -Fq '"version": "7.2"' /tmp/health.json
+          curl -fsS http://127.0.0.1:8910/ | grep -F 'ai-import.js?v=7.2'
+          curl -fsS http://127.0.0.1:8910/ | grep -F 'curriculum-app.js?v=7.2'
 
-          await page.goto('http://127.0.0.1:8910/', {waitUntil:'networkidle', timeout:60000});
-          console.log('READY', await page.evaluate(()=>document.readyState));
-          console.log('CLIENT_VERSION', await page.evaluate(()=>window.CHINESE_CURRICULUM_CLIENT_VERSION));
-          await page.waitForTimeout(700);
-          const updateNotice=page.locator('#courseUpdateNotice');
-          console.log('UPDATE_NOTICE_COUNT', await updateNotice.count());
-          if(await updateNotice.count()) throw new Error('False update notice is visible on current release');
+      - name: Browser test generation and semantic checking
+        run: |
+          cat > test-ai-features.mjs <<'JS'
+          import { chromium } from 'playwright';
+          const browser=await chromium.launch({headless:true});
+          const page=await browser.newPage({viewport:{width:1280,height:900}});
+          const pageErrors=[];
+          page.on('pageerror',e=>pageErrors.push(e.message));
+
+          await page.route('**/api/topic/exercises/generate', async route => {
+            await route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({
+              grammar:[{q:'我___去公司。',opts:['会','把','被','比'],a:'会',note:'会 huì + V — буду'}],
+              readings:[{cn:'我明天去公司。',py:'Wǒ míngtiān qù gōngsī.',q:'Куда?',opts:['В офис','Домой','В школу','В банк'],a:0}],
+              builds:[{tokens:['我','明天','去','公司'],ans:'我明天去公司。',py:'Wǒ míngtiān qù gōngsī.',ru:'Я завтра иду в офис.'}],
+              productions:[{ru:'Я завтра иду в офис.',ans:['我明天去公司。'],py:'Wǒ míngtiān qù gōngsī.'}]
+            })});
+          });
+          await page.route('**/api/chinese/check', async route => {
+            const request=route.request();
+            const body=request.postDataJSON();
+            if(body.user_answer!=='我明天会跟你联系。') throw new Error('Unexpected answer sent to AI checker: '+body.user_answer);
+            await route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({
+              ok:true,verdict:'acceptable',meaning_ok:true,grammar_ok:true,natural:false,
+              comment_ru:'Фраза грамматически допустима; порядок слов естественный.',
+              corrected_cn:'我明天会跟你联系。',corrected_pinyin:'Wǒ míngtiān huì gēn nǐ liánxì.',errors:[]
+            })});
+          });
+
+          await page.goto('http://127.0.0.1:8910/',{waitUntil:'networkidle',timeout:60000});
+          console.log('CLIENT_VERSION',await page.evaluate(()=>window.CHINESE_CURRICULUM_CLIENT_VERSION));
+          if((await page.locator('#courseUpdateNotice').count())!==0) throw new Error('False update notice');
 
           const onboarding=page.locator('.course-onboarding');
-          if(await onboarding.count() && await onboarding.isVisible().catch(()=>false)){
+          if(await onboarding.count()&&await onboarding.isVisible().catch(()=>false)){
             const h3=onboarding.getByRole('button',{name:/HSK 3/i});
             if(await h3.count()) await h3.first().click();
           }
 
           const nav=page.locator('[data-view="materials"]');
-          console.log('NAV_COUNT',await nav.count());
           await nav.first().click();
-          await page.waitForTimeout(300);
-          console.log('VIEW_VISIBLE',await page.locator('#view-materials').isVisible());
-
-          const btn=page.locator('#startShoppingTopic');
-          console.log('BUILTIN_VISIBLE',await btn.isVisible());
-          console.log('BUILTIN_ONCLICK',await page.evaluate(()=>String(document.getElementById('startShoppingTopic')?.onclick)));
-          console.log('BEFORE_BUILTIN',await page.evaluate(()=>({session:document.getElementById('session')?.className,active:state?.activeTopic,strict:state?.strictTopicNext,forced:state?.topicLessonNext})));
-          await btn.click();
-          await page.waitForTimeout(500);
-          console.log('AFTER_BUILTIN',await page.evaluate(()=>({session:document.getElementById('session')?.className,display:getComputedStyle(document.getElementById('session')).display,active:state?.activeTopic,strict:state?.strictTopicNext,forced:state?.topicLessonNext,phase:document.getElementById('phase')?.textContent})));
-
-          const close=page.locator('#closeSession');
-          if(await close.count()) await close.click().catch(()=>{});
-
-          await page.evaluate(() => {
-            const now=Date.now(), wid='e2e_word';
-            if(!WORDS.some(w=>String(w.id)===wid)) WORDS.push({id:wid,h:'测试',p:'cèshì',r:'тестировать',l:3,t:'e2e',e:'这是一个测试。|Zhè shì yí ge cèshì.|Это тест.'});
-            state.customTopics=[...(state.customTopics||[]).filter(t=>t.id!=='e2e_topic'),{id:'e2e_topic',title:'测试材料',pinyin:'cèshì cáiliào',ru:'тестовый материал',wordIds:[wid],studyMode:'words',grammar:[],readings:[],builds:[],productions:[]}];
-            state.materials=[...(state.materials||[]).filter(m=>m.id!=='e2e_material'),{id:'e2e_material',topicId:'e2e_topic',ts:now,title:'测试材料',preview:'Тестовый материал',wordIds:[wid],studyMode:'words'}];
+          await page.evaluate(()=>{
+            const wid='e2e_ai_word';
+            if(!WORDS.some(w=>String(w.id)===wid)) WORDS.push({id:wid,h:'公司',p:'gōngsī',r:'компания',l:3,t:'work',e:'我在公司工作。|Wǒ zài gōngsī gōngzuò.|Я работаю в компании.'});
+            state.customTopics=[...(state.customTopics||[]).filter(t=>t.id!=='e2e_ai_topic'),{
+              id:'e2e_ai_topic',title:'工作',pinyin:'gōngzuò',ru:'работа',wordIds:[wid],studyMode:'full',
+              grammar:[],readings:[],builds:[],productions:[],sourceText:'我明天去公司。'
+            }];
+            state.materials=[...(state.materials||[]).filter(m=>m.id!=='e2e_ai_material'),{
+              id:'e2e_ai_material',topicId:'e2e_ai_topic',ts:Date.now(),title:'工作',preview:'Работа',
+              wordIds:[wid],studyMode:'full'
+            }];
             save();renderMaterials();
           });
-          await page.waitForTimeout(800);
+          await page.waitForTimeout(700);
 
-          console.log('CUSTOM_HTML',await page.locator('#customMaterials').innerHTML());
-          const custom=page.locator('#customMaterials .study-only-btn').last();
-          console.log('CUSTOM_COUNT',await custom.count());
-          if(await custom.count()){
-            console.log('CUSTOM_ONCLICK',await custom.evaluate(el=>String(el.onclick)));
-            console.log('BEFORE_CUSTOM',await page.evaluate(()=>({session:document.getElementById('session')?.className,active:state?.activeTopic,strict:state?.strictTopicNext,forced:state?.topicLessonNext})));
-            await custom.click();
-            await page.waitForTimeout(500);
-            console.log('AFTER_CUSTOM',await page.evaluate(()=>({session:document.getElementById('session')?.className,display:getComputedStyle(document.getElementById('session')).display,active:state?.activeTopic,strict:state?.strictTopicNext,forced:state?.topicLessonNext,phase:document.getElementById('phase')?.textContent})));
-          }
-          await page.screenshot({path:'materials-e2e-diagnostic.png',fullPage:true});
+          const generate=page.locator('#customMaterials .generate-topic-btn').last();
+          if(!await generate.count()) throw new Error('Generate exercises button missing');
+          await generate.click();
+          await page.waitForFunction(()=>state.customTopics.find(t=>t.id==='e2e_ai_topic')?.productions?.length===1);
+          const generated=await page.evaluate(()=>{
+            const t=state.customTopics.find(t=>t.id==='e2e_ai_topic');
+            return {g:t.grammar.length,r:t.readings.length,b:t.builds.length,p:t.productions.length,mode:t.studyMode};
+          });
+          console.log('GENERATED',JSON.stringify(generated));
+          if(generated.g!==1||generated.r!==1||generated.b!==1||generated.p!==1||generated.mode!=='full') throw new Error('Generated exercises were not merged');
+
+          await page.evaluate(()=>{
+            showProduction({x:{ru:'Я свяжусь с тобой завтра.',ans:['我明天会联系你。'],py:'Wǒ míngtiān huì liánxì nǐ.'}});
+            document.getElementById('session').classList.add('open');
+          });
+          await page.locator('#prodInput').fill('我明天会跟你联系。');
+          await page.locator('#checkProd').click();
+          await page.waitForSelector('#feedback .feedback.success',{timeout:10000});
+          const feedback=await page.locator('#feedback').innerText();
+          console.log('AI_FEEDBACK',feedback);
+          if(!feedback.includes('Допустимо')) throw new Error('Alternative correct answer was not accepted');
+          if(!feedback.includes('Wǒ míngtiān huì gēn nǐ liánxì.')) throw new Error('Pinyin feedback missing');
+
+          if(pageErrors.length) throw new Error('Page errors: '+pageErrors.join(' | '));
+          await page.screenshot({path:'ai-features-e2e.png',fullPage:true});
           await browser.close();
           JS
-          node test-materials.mjs
+          node test-ai-features.mjs
+
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: materials-e2e-screenshot
-          path: materials-e2e-*.png
+          name: chinese-ai-e2e-screenshot
+          path: ai-features-e2e.png
           if-no-files-found: ignore
