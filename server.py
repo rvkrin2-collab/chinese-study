@@ -66,6 +66,13 @@ SYSTEM_PROMPT = """Ты методист по китайскому для рус
 - readings.options всегда 4 варианта, answer_index 0..3.
 - source_text_cn сохраняй максимально близко к источнику.
 - source_pinyin должен соответствовать source_text_cn.
+- example_cn у каждого слова — короткое ЕСТЕСТВЕННОЕ предложение на китайском,
+  использующее именно это слово, а НЕ определение и не одно слово само по
+  себе. example_ru — точный перевод именно этого предложения на русский, а
+  НЕ словарное толкование и не грамматическая справка вида «Контекст
+  употребления: …». Это касается и счётных слов, числительных, частиц: даже
+  для них придумывай короткий естественный пример-предложение, а не
+  справочную запись.
 """
 
 VISION_PROMPT = """Точно прочитай этот китайский учебный материал. Извлеки весь полезный текст:
@@ -729,7 +736,35 @@ def text_analyze(extracted,note="",hsk_level=3):
     required=["title_cn","title_pinyin","title_ru","summary_ru","source_text_cn","source_pinyin","words","grammar","readings","builds","productions"]
     missing=[k for k in required if k not in out]
     if missing:raise RuntimeError("В ответе MiniMax не хватает полей: "+", ".join(missing))
+    sanitize_word_examples(out.get("words"))
     return out
+
+# Промпт просит example_ru = перевод example_cn, но для служебных слов
+# (счётные слова, числительные, частицы) модель иногда вместо перевода
+# подставляет словарную справку вида "Контекст употребления: «朵» — ...".
+# Код этого не замечает: это валидный непустой JSON, просто плохой с точки
+# зрения смысла. Эта строка потом всплывает как вариант ответа в аудировании
+# (showListening берёт ex.ru у ЛЮБЫХ слов как отвлекающие варианты) — для
+# ученика выглядит как брак задания, хотя разбор материала прошёл "успешно".
+# Полностью исключить такое промптом нельзя (нет гарантии от LLM), поэтому
+# есть дешёвая эвристика здесь: если example_ru похож на справку, а не на
+# перевод предложения, откатываемся на translation_ru — короче, но не вводит
+# в заблуждение как квази-перевод.
+_BAD_EXAMPLE_RU = re.compile(r"контекст\s+употреблен|usage\s+context", re.I)
+
+
+def sanitize_word_examples(words):
+    if not isinstance(words, list):
+        return
+    for w in words:
+        if not isinstance(w, dict):
+            continue
+        example_ru = str(w.get("example_ru") or "").strip()
+        if not example_ru or _BAD_EXAMPLE_RU.search(example_ru):
+            w["example_ru"] = str(w.get("translation_ru") or "").strip()
+            if not str(w.get("example_cn") or "").strip():
+                w["example_cn"] = str(w.get("hanzi") or "")
+                w["example_pinyin"] = str(w.get("pinyin") or "")
 
 def analyze(payload, progress=None):
     def _p(stage, detail=""):
