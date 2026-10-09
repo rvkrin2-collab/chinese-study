@@ -166,6 +166,29 @@ window.toggleMaterialSource=function(id,btn){
   btn.textContent=box.classList.contains("hidden")?"Показать текст":"Скрыть текст";
 };
 
+window.deleteMaterial=function(mid){
+  const m=(state.materials||[]).find(x=>String(x.id)===String(mid));
+  if(!m)return;
+  if(!confirm('Удалить материал «'+(m.title||'без названия')+'» вместе с темой, словами и прогрессом по ним? Это нельзя отменить.'))return;
+
+  const topicId=m.topicId,t=topicId?topic(topicId):null;
+  const wordIds=new Set([...(m.wordIds||[]),...((t&&t.wordIds)||[])].map(String));
+
+  state.materials=(state.materials||[]).filter(x=>String(x.id)!==String(mid));
+  if(topicId)state.customTopics=(state.customTopics||[]).filter(x=>String(x.id)!==String(topicId));
+  state.customWords=(state.customWords||[]).filter(w=>!wordIds.has(String(w.id)));
+  if(Array.isArray(WORDS))for(let i=WORDS.length-1;i>=0;i--){if(wordIds.has(String(WORDS[i].id)))WORDS.splice(i,1)}
+  if(state.words)for(const id of wordIds)delete state.words[id];
+
+  if(state.activeTopic&&String(state.activeTopic.id)===String(topicId))state.activeTopic=null;
+  if(String(state.strictTopicNext)===String(topicId))state.strictTopicNext=null;
+  if(String(state.topicLessonNext)===String(topicId))state.topicLessonNext=null;
+
+  saveState();
+  try{save()}catch{}
+  try{renderAll()}catch{}
+};
+
 function mergeExerciseLists(a,b,key){
   const seen=new Set(),out=[];
   for(const x of [...(a||[]),...(b||[])]){
@@ -288,7 +311,7 @@ function enhance(){
       actions.style.cssText="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap";
       card.appendChild(actions);
     }
-    $$(".study-only-btn,.legacy-study-btn,.reanalyze-btn,.source-study-btn,.generate-topic-btn",actions).forEach(x=>x.remove());
+    $$(".study-only-btn,.legacy-study-btn,.reanalyze-btn,.source-study-btn,.generate-topic-btn,.delete-material-btn",actions).forEach(x=>x.remove());
 
     if(id&&t){
       const b=document.createElement("button");
@@ -331,6 +354,13 @@ function enhance(){
       const b=document.createElement("button");
       b.className="primary reanalyze-btn";b.textContent="Переразобрать через MiniMax";b.onclick=()=>reanalyzeLegacyMaterial(m.id);actions.prepend(b);
     }
+
+    const del=document.createElement("button");
+    del.className="ghost delete-material-btn";
+    del.style.cssText="color:#b3362b;border-color:#b3362b";
+    del.textContent="Удалить";
+    del.onclick=()=>deleteMaterial(m.id);
+    actions.appendChild(del);
   });
 }
 
