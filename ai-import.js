@@ -192,4 +192,24 @@ showProduction=function(s){
 
 function wire(){css();modal();const old=document.getElementById('showMaterialAdd');if(old){const b=old.cloneNode(true);old.replaceWith(b);b.onclick=()=>document.getElementById('aiMatModal').classList.add('open')}else{const b=document.createElement('button');b.className='primary';b.textContent='+ Добавить материал';b.style.position='fixed';b.style.right='22px';b.style.bottom='22px';b.style.zIndex=999;b.onclick=()=>document.getElementById('aiMatModal').classList.add('open');document.body.appendChild(b)}renderAll()}
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',wire);else wire();
+
+// 09.10.2026: /topic-study.js живёт на сервере (server.py, TOPIC_STUDY_JS) и
+// покрыт CI (.github/workflows/validate-frontend.yml), но index.html его
+// никогда не подключал — без него у карточек материалов нет кнопки запуска
+// занятия вообще (studyMaterialOnly не определена), и "Изучать материал"
+// не могла ничего делать. Грузим его здесь, а не правя шаблон index.html:
+// так гарантирован порядок (после этого файла, buildSession уже обёрнут
+// ai-import.js) без пересборки manifest/dist-чанков, которыми управляет
+// отдельный процесс обновления.
+(function(){
+  if(document.querySelector('script[data-topic-study]'))return;
+  const s=document.createElement('script');
+  // Относительный путь, БЕЗ ведущего "/": приложение смонтировано на
+  // поддиректории (portal.netroman.ru/chinese/ -> Caddy strip_prefix
+  // /chinese -> backend root). Абсолютный "/topic-study.js" ушёл бы на
+  // корень домена мимо этого бэкенда — та же причина, почему ai-import.js
+  // в index.html подключён как "ai-import.js?v=...", а не "/ai-import.js...".
+  s.src='topic-study.js';s.async=false;s.dataset.topicStudy='1';
+  document.head.appendChild(s);
+})();
 })();
