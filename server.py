@@ -81,7 +81,22 @@ VISION_PROMPT = """Точно прочитай этот китайский уч�
 
 TOPIC_STUDY_JS = r"""(()=>{
 const $=(s,r=document)=>r.querySelector(s), $$=(s,r=document)=>[...r.querySelectorAll(s)];
-function saveState(){try{localStorage.setItem(KEY,JSON.stringify(state))}catch{}}
+// 15.10.2026: этот try/catch был полностью немым — если localStorage.setItem
+// падал (переполнено хранилище браузера, приватный режим режет квоту до
+// нуля в некоторых браузерах и т.п.), изменение оставалось только в памяти,
+// рендерилось как успешное, а после перезагрузки страницы пропадало. Ни
+// пользователь, ни я по его описанию не могли отличить "не сработало" от
+// "сработало, но не сохранилось" — отчёт именно так и выглядел: "удалилось,
+// после перезагрузки вернулось". Теперь ошибка хотя бы видна.
+let LAST_SAVE_ERROR=null;
+function saveState(){
+  try{localStorage.setItem(KEY,JSON.stringify(state));LAST_SAVE_ERROR=null;return true}
+  catch(e){
+    LAST_SAVE_ERROR=e;
+    alert('Не удалось сохранить изменения в хранилище браузера: '+(e&&e.message||e)+'.\n\nСкорее всего оно переполнено. Попробуйте удалить несколько материалов (в этот раз это тоже может не сохраниться) или открыть сайт не в приватном окне. Если обновить страницу сейчас — последнее изменение, вероятно, пропадёт.');
+    return false;
+  }
+}
 function topic(id){
   if(!id)return null;
   const custom=(state.customTopics||[]).find(t=>String(t.id)===String(id));
@@ -184,8 +199,13 @@ window.deleteMaterial=function(mid){
   if(String(state.strictTopicNext)===String(topicId))state.strictTopicNext=null;
   if(String(state.topicLessonNext)===String(topicId))state.topicLessonNext=null;
 
+  // Раньше здесь был ещё и try{save()}catch{} — save() пишет в тот же
+  // localStorage без своего try/catch, так что при переполненном хранилище
+  // он падал на ТОЙ ЖЕ ошибке, что и saveState() строкой выше, только молча
+  // (catch{} её проглатывал) — второй немой провал поверх первого, уже
+  // показанного пользователю. saveState() теперь сам не молчит, второй
+  // вызов был просто лишним риском скрыть то, что уже показано.
   saveState();
-  try{save()}catch{}
   try{renderAll()}catch{}
 };
 
