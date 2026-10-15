@@ -193,23 +193,16 @@ showProduction=function(s){
 function wire(){css();modal();const old=document.getElementById('showMaterialAdd');if(old){const b=old.cloneNode(true);old.replaceWith(b);b.onclick=()=>document.getElementById('aiMatModal').classList.add('open')}else{const b=document.createElement('button');b.className='primary';b.textContent='+ Добавить материал';b.style.position='fixed';b.style.right='22px';b.style.bottom='22px';b.style.zIndex=999;b.onclick=()=>document.getElementById('aiMatModal').classList.add('open');document.body.appendChild(b)}renderAll()}
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',wire);else wire();
 
-// 09.10.2026: /topic-study.js живёт на сервере (server.py, TOPIC_STUDY_JS) и
-// покрыт CI (.github/workflows/validate-frontend.yml), но index.html его
-// никогда не подключал — без него у карточек материалов нет кнопки запуска
-// занятия вообще (studyMaterialOnly не определена), и "Изучать материал"
-// не могла ничего делать. Грузим его здесь, а не правя шаблон index.html:
-// так гарантирован порядок (после этого файла, buildSession уже обёрнут
-// ai-import.js) без пересборки manifest/dist-чанков, которыми управляет
-// отдельный процесс обновления.
-(function(){
-  if(document.querySelector('script[data-topic-study]'))return;
-  const s=document.createElement('script');
-  // Относительный путь, БЕЗ ведущего "/": приложение смонтировано на
-  // поддиректории (portal.netroman.ru/chinese/ -> Caddy strip_prefix
-  // /chinese -> backend root). Абсолютный "/topic-study.js" ушёл бы на
-  // корень домена мимо этого бэкенда — та же причина, почему ai-import.js
-  // в index.html подключён как "ai-import.js?v=...", а не "/ai-import.js...".
-  s.src='topic-study.js';s.async=false;s.dataset.topicStudy='1';
-  document.head.appendChild(s);
-})();
+// 09.10.2026, отменено 15.10.2026: здесь была ручная динамическая подгрузка
+// topic-study.js (чтобы гарантировать, что он выполнится после этого файла —
+// buildSession должен оборачиваться поверх уже обёрнутой ai-import.js
+// версии). Теперь сервер сам вставляет оба тега в правильном порядке
+// (server.py, do_GET "/" — ai-import.js, затем topic-study.js) при каждой
+// отдаче index.html, так что этот костыль больше не нужен и только грузил
+// topic-study.js дважды (второй раз — вот этим кодом, поверх уже
+// подключённого сервером). См. коммит с объяснением, почему понадобилась
+// именно переcтановка порядка, а не что-то другое: topic-study.js раньше
+// подключался сервером ПЕРЕД ai-import.js, и buildSession=... в ai-import.js
+// (простое присваивание, не обёртка) затирал обёртку topic-study.js целиком
+// — из-за этого studyMaterialOnly не учитывала state.strictTopicNext.
 })();
