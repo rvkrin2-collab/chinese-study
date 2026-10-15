@@ -1063,7 +1063,37 @@ class Handler(SimpleHTTPRequestHandler):
                 html=re.sub(r'<script src="ai-import\.js\?v=[^"]+"></script>\s*',"",html)
                 html=re.sub(r'<script src="cloud-sync\.js\?v=[^"]+"></script>\s*',"",html)
                 html=re.sub(r'<script src="curriculum-app\.js\?v=[^"]+"></script>\s*',"",html)
-                html=html.replace("</body>",f'<script src="topic-study.js?v={APP_VERSION}"></script>\\n<script src="ai-import.js?v={APP_VERSION}"></script>\\n<script src="curriculum-app.js?v={APP_VERSION}"></script>\\n<script src="cloud-sync.js?v={APP_VERSION}"></script>\\n</body>')
+                # 15.10.2026, нашлось при разборе "удаление не сохраняется":
+                # порядок был topic-study.js ПЕРЕД ai-import.js. topic-study.js
+                # делает `const normalBuild=buildSession` и оборачивает его —
+                # но ai-import.js следом делает buildSession=function(){...}
+                # ПРОСТЫМ присваиванием (не оборачивая, а заменяя целиком), и
+                # обёртка topic-study.js, которая слушает state.strictTopicNext,
+                # терялась целиком. ai-import.js должен грузиться ПЕРВЫМ, чтобы
+                # topic-study.js оборачивал уже ЕГО версию buildSession, а не
+                # наоборот — это тот же порядок, который раньше пришлось
+                # обеспечивать костылём (динамическая подгрузка topic-study.js
+                # из конца ai-import.js); теперь порядок верный сам по себе, и
+                # костыль из ai-import.js убран отдельным изменением.
+                #
+                # cloud-sync.js убран из автоподключения: он утягивает
+                # сохранённое на СЕРВЕРЕ state/library и СЛИВАЕТ (union-merge
+                # по id, без какого-либо понятия "удалено") с локальным при
+                # каждой загрузке страницы и каждые 12 секунд после. Хендлеры
+                # topic-study.js (studyMaterialOnly, deleteMaterial,
+                # generateMaterialExercises) вызывают saveState() — локальный
+                # хелпер, который НЕ проходит через обёртку cloud-sync.js над
+                # save() — поэтому удаление никогда не уходило на сервер, а
+                # следующий pull с сервера (где материал всё ещё есть)
+                # воскрешал его обратно в localStorage. Никакой tombstone-
+                # механики для удаления в этом протоколе синхронизации нет —
+                # честно чинить это означало бы переписывать merge и на
+                # клиенте, и на сервере; сейчас синхронизацию между
+                # устройствами никто не просил, а удаление уже сломано ею —
+                # поэтому проще и безопаснее отключить cloud-sync.js, чем
+                # оставлять полусломанную синхронизацию, которая стабильно
+                # отменяет ручное удаление.
+                html=html.replace("</body>",f'<script src="ai-import.js?v={APP_VERSION}"></script>\\n<script src="topic-study.js?v={APP_VERSION}"></script>\\n<script src="curriculum-app.js?v={APP_VERSION}"></script>\\n</body>')
                 return self.send_bytes(200,html.encode("utf-8"),"text/html; charset=utf-8","no-cache")
         return super().do_GET()
     def do_POST(self):
