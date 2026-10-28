@@ -544,12 +544,27 @@ def http_json(url, payload, headers, timeout=120):
     return obj
 
 def vlm_read_image(mime, raw, page_label=""):
+    # 28.10.2026: раньше одна пустая строка от VLM (бывает и на вполне
+    # читаемых фото — транзиентный сбой на стороне MiniMax, не каждый раз
+    # воспроизводится) рушила весь пакет файлов с общей фразой "не вернул
+    # распознанный текст", без единого слова о том, какой именно файл
+    # виноват и что с этим делать. Теперь одна повторная попытка перед тем
+    # как сдаться, и в сообщении — какой файл/страница и практический совет.
     if mime not in ("image/jpeg","image/png","image/webp"): mime="image/jpeg"
     payload={"prompt":VISION_PROMPT+(f"\nЭто {page_label}." if page_label else ""),"image_url":f"data:{mime};base64,"+base64.b64encode(raw).decode("ascii")}
-    resp=http_json(VLM_URL,payload,{"Authorization":"Bearer "+KEY,"MM-API-Source":"Minimax-MCP","Content-Type":"application/json"},120)
-    text=str(resp.get("content") or "").strip()
-    if not text: raise RuntimeError("MiniMax VLM не вернул распознанный текст.")
-    return text
+    for attempt in range(2):
+        resp=http_json(VLM_URL,payload,{"Authorization":"Bearer "+KEY,"MM-API-Source":"Minimax-MCP","Content-Type":"application/json"},120)
+        text=str(resp.get("content") or "").strip()
+        if text:
+            return text
+        if attempt==0:
+            time.sleep(1.5)
+    where=f" для «{page_label}»" if page_label else ""
+    raise RuntimeError(
+        f"MiniMax VLM не вернул распознанный текст{where} (дважды подряд). "
+        f"Попробуйте переснять фото при лучшем освещении, без бликов и "
+        f"размытия, либо загрузить его отдельно от остальных."
+    )
 
 def pdf_to_images(raw, progress=None):
     if not any((Path(d)/"pdftoppm").is_file() for d in os.environ.get("PATH","").split(":")):
