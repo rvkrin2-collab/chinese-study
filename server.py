@@ -124,6 +124,24 @@ buildSession=function(){
   state.strictTopicNext=null;saveState();
   const t=topic(id);if(!t)return normalBuild();
 
+  // 28.10.2026: режим "Только новые слова" (studyMode==="words", выбирается
+  // радиокнопкой при добавлении материала — см. ai-import.js confirm()).
+  // До этой правки сюда всё равно попадали задания на аудирование: li ниже
+  // строился из vw (слов темы) НЕЗАВИСИМО от studyMode, а не из t.grammar/
+  // t.readings/t.builds/t.productions — те для "только слов" осознанно
+  // оставлены пустыми при создании материала, но аудирование это не спасало.
+  // Пользователь прямо попросил карточки без заданий на аудирование,
+  // грамматику и т.д. — здесь отдельная ветка: чистый список карточек по
+  // ВСЕМ словам темы (не ограничено пятью — после обычного лимита часть
+  // новых слов материала никогда не доходила бы до первой карточки).
+  if(t.studyMode==="words"){
+    const allWords=topicWords(t).sort((a,b)=>priority(b)-priority(a));
+    lessonSteps=allWords.map(w=>({type:"vocab",w}));
+    lessonPos=0;
+    lessonStats={vocab:0,listening:0,grammar:0,reading:0,sentence:0,production:0};
+    return;
+  }
+
   const vw=topicWords(t).sort((a,b)=>priority(b)-priority(a)).slice(0,5);
   const li=shuffled(vw).slice(0,2);
   const gr=shuffled(t.grammar||[]).slice(0,3);
