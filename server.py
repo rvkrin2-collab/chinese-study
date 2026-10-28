@@ -136,6 +136,19 @@ buildSession=function(){
   // новых слов материала никогда не доходила бы до первой карточки).
   if(t.studyMode==="words"){
     const allWords=topicWords(t).sort((a,b)=>priority(b)-priority(a));
+    // 28.10.2026, диагностика: если у темы с studyMode="words" не нашлось
+    // ни одного реального слова (wordIds не резолвятся через WORDS — слово
+    // не попало в WORDS/customWords на момент построения сессии), раньше
+    // это тихо показывало "Смешанное занятие закончено" с нулями везде —
+    // полностью непонятно, что пошло не так. Теперь явная ошибка в консоли
+    // (для диагностики) и понятное сообщение пользователю вместо пустого
+    // "успеха", плюс откат к обычному смешанному занятию, чтобы приложение
+    // не зависало на пустом экране.
+    if(!allWords.length){
+      console.error("[topic-study] пустая тема в режиме слов:",{topicId:t.id,title:t.title,wordIds:t.wordIds,wordsInPool:Array.isArray(WORDS)?WORDS.length:"WORDS не массив"});
+      alert("Не удалось открыть карточки: у этого материала не нашлось ни одного сохранённого слова (возможно, сбой при добавлении). Откроется обычное занятие вместо этого — напишите об этом, чтобы поправить материал.");
+      return normalBuild();
+    }
     lessonSteps=allWords.map(w=>({type:"vocab",w}));
     lessonPos=0;
     lessonStats={vocab:0,listening:0,grammar:0,reading:0,sentence:0,production:0};
@@ -168,6 +181,14 @@ buildSession=function(){
     pr[1]&&{type:"production",x:pr[1]},
     bu[2]&&{type:"sentence",x:bu[2]}
   ].filter(Boolean);
+  // 28.10.2026: та же защита, что и в ветке "words" выше — если у темы
+  // ни слов, ни упражнений не нашлось, не показываем пустое "занятие
+  // закончено", а откатываемся на обычное смешанное занятие.
+  if(!lessonSteps.length){
+    console.error("[topic-study] пустая тема (полный режим):",{topicId:t.id,title:t.title,wordIds:t.wordIds,wordsInPool:Array.isArray(WORDS)?WORDS.length:"WORDS не массив"});
+    alert("Не удалось открыть этот материал: в нём не нашлось ни слов, ни заданий (возможно, сбой при добавлении). Откроется обычное занятие вместо этого — напишите об этом, чтобы поправить материал.");
+    return normalBuild();
+  }
   lessonPos=0;
   lessonStats={vocab:0,listening:0,grammar:0,reading:0,sentence:0,production:0};
 };
